@@ -116,6 +116,17 @@ The matcher is the standard linear-time PikeVM:
 Complexity is O(n * m) in haystack length and program size, with no
 backtracking.
 
+### Reusable scratch
+
+`Regex::scratch()` allocates a `Scratch` holding the two thread lists, their
+visited sets, and the epsilon-closure stack. `find_with`, `is_match_with`, and
+`find_iter_with` reuse it across searches. The convenience `find` and
+`find_iter` allocate a temporary `Scratch` per call.
+
+A `Scratch` is not shared between threads. The benchmark gives each worker its
+own. Reusing scratch is required for meaningful engine measurements: without
+it, per-search allocation dominates the scan for short posts.
+
 ### Empty matches
 
 `find_iter` implements the Python 3.7+ rule. After an empty match at position
@@ -190,11 +201,12 @@ Milestone 5 uses PyO3 and maturin. The binding:
 
 ## Module layout
 
-    src/lib.rs        public API, Match, Regex, Matches
+    src/lib.rs        public API, Match, Regex, Matches, MatchesWith
     src/ucs.rs        Ucs enum, kind, unit access, slicing
     src/compile.rs    Python-dialect adapter, AST validation, lowering
-    src/pikevm.rs     thread lists, epsilon closure, matching
+    src/pikevm.rs     Scratch, thread lists, epsilon closure, matching
     src/error.rs      error types and displays
-    examples/oracle.rs  TSV oracle used by the Python differential harness
+    examples/bench.rs  self-contained Telegram benchmark
+    examples/oracle.rs TSV oracle used by the Python differential harness
     tools/python_diff.py  randomized comparison against CPython re
     tests/m1.rs       accepted subset, Python spans, UCS kinds, adversarial

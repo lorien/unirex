@@ -268,3 +268,34 @@ fn adversarial_patterns_terminate() {
         start.elapsed()
     );
 }
+
+#[test]
+fn scratch_reuse_matches_convenience_api() {
+    let re = Regex::new("a*").unwrap();
+    let mut scratch = re.scratch();
+
+    for hay in ["baa", "aaa", "xyz", ""] {
+        let units: Vec<u8> = hay.bytes().collect();
+        let ucs = Ucs::Ucs1(&units);
+        let expected: Vec<(usize, usize)> =
+            re.find_iter(ucs).map(|m| (m.start(), m.end())).collect();
+        let actual: Vec<(usize, usize)> = re
+            .find_iter_with(&mut scratch, ucs)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        assert_eq!(actual, expected, "haystack {hay:?}");
+        assert_eq!(
+            re.find_with(&mut scratch, ucs)
+                .map(|m| (m.start(), m.end())),
+            re.find(ucs).map(|m| (m.start(), m.end())),
+            "find on {hay:?}"
+        );
+    }
+
+    let units: Vec<u16> = "aβ".chars().map(|c| c as u16).collect();
+    assert_eq!(
+        re.find_with(&mut scratch, Ucs::Ucs2(&units))
+            .map(|m| (m.start(), m.end())),
+        Some((0, 1))
+    );
+}

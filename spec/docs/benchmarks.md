@@ -1,79 +1,99 @@
 # Benchmarks
 
-## Primary target
+## Harness
 
-The `rurex` Telegram benchmark is the real-world target:
+`examples/bench.rs` is self-contained. It never depends on another checkout.
 
-- Corpus: 1,000,000 posts, 526,880,801 uncompressed bytes, about 470 MB of
-  UTF-8 text, mostly Arabic and Persian.
-- Average length: about 426 code units per post.
-- Mentions: 334,136 in 186,226 posts.
+Corpus resolution:
+
+1. `--corpus PATH` or `RUREX_TG_DATA`, for an offline or pre-downloaded copy.
+2. `var/bench-data/tg-1m.json.gz`, if present and the SHA-256 matches.
+3. Download from the public release URL, verify SHA-256, then cache it.
+4. `--no-download` or a failed download prints the URL and checksum and exits.
+
+The corpus URL is the public `rurex` release asset. That is an external data
+source, not a repository dependency.
+
+## Modes
+
+- `ucs`: this engine over the actual CPython kind of each post (UCS-1, UCS-2,
+  or UCS-4), using a reused `Scratch`.
+- `bytes`: Rust `regex::bytes` over UTF-8, a same-machine engine baseline.
+- `str`: Rust `regex` over UTF-8.
+- `at`: `memchr` count of `@` over UTF-8. This is a lower bound for a future
+  first-unit prefilter, not an engine result.
+
+## Protocol
+
+- Load, pack, and compile outside the timed window, matching the `rurex`
+  benchmark protocol.
+- Each post is scanned exactly once per run, counting matches with
+  `find_iter_with` and `black_box`.
+- The first run is cold; `--repeat N` adds warm runs. Report first, median,
+  minimum, nanoseconds per post, and MB/s.
+- `--threads N` splits posts into contiguous ranges. Each worker has its own
+  `Scratch`; wall time is the slowest worker. Default is 1 thread.
+- An independent naive counter runs during loading, untimed. Every engine
+  mode must match it. For the full corpus, 334,136 mentions in 186,226 posts
+  is also asserted.
+- `--self-test` runs an embedded UCS-1/2/4 corpus offline.
+
+## Corpus
+
+- 1,000,000 posts, 526,880,801 uncompressed bytes.
+- 334,136 mentions in 186,226 posts.
 - Pattern: `@[a-zA-Z][a-zA-Z0-9_]{4,31}`.
-
-The corpus is not committed. It is a GitHub release asset of the `rurex`
-project:
-
-- URL: `https://github.com/lorien/rurex/releases/download/bench-data-telegram-v1/tg-1m.json.gz`
-- gzip size: 93,506,895 bytes.
+- URL:
+  `https://github.com/lorien/rurex/releases/download/bench-data-telegram-v1/tg-1m.json.gz`
 - gzip SHA-256:
   `eb91db735fcf1a9e6096a59e959471cb9a3c4f41438f864e800cdb66f994023b`
 - Uncompressed SHA-256:
   `02c51223e24db5b05acedd88ca6123167addeebc9328e450f7d0afd4bdec6c3d`
+- Both checksums were verified against the cached corpus on 2026-10-18.
 
-The harness resolves the corpus in this order: `$RUREX_TG_DATA` pointing at a
-`.jsonl` or `.gz` file, then a cached copy at `var/bench-data/tg-1m.json.gz`,
-then a checksum-verified download. It reads the gzip stream directly; the
-527 MB file is never materialized.
+If the corpus is unavailable, a synthetic corpus may be used, but every
+result must be labeled synthetic.
 
-If the corpus is unavailable, generate a synthetic corpus with a similar
-code-point distribution and label every result as synthetic.
+## Results: milestone 1 engine-only
 
-## What to measure
+Machine: Intel Core i5-8350U, 8 logical cores, Linux, Rust 1.97.1. Full
+corpus, GIL-independent Rust harness, `--repeat 3`, 1 thread unless noted.
 
-1. Engine-only time for `find` and `findall` over UCS-2.
-2. End-to-end Python time, including result construction, once the binding
-   exists.
-3. Cold and warm runs separately.
-4. GIL builds with 1 and 4 workers; free-threaded builds with 1 and 4 workers.
-5. Engine time without the prefilter and with it, so the prefilter's
-   contribution is visible.
+- `ucs`, 1 thread: median 5.424 s, first 5.379 s, 334,136 mentions.
+- `ucs`, 4 threads: median 1.796 s.
+- Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
+  UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing
+  every post to UCS-2 would misrepresent about 46 percent of the corpus.
+- `bytes`, 1 thread: median 0.151 s.
+- `str`, 1 thread: median 0.188 s.
+- `at`, 1 thread: median 0.073 s.
 
-Report raw numbers, repetition counts, machine, operating system, Rust
-version, and the exact command. Summaries belong in the session report.
+Interpretation:
 
-## Baselines
+- The milestone 1 PikeVM is about 36 times slower than the Rust `regex` bytes
+  engine single-threaded, and still about 12 times slower with 4 threads.
+- About 77 percent of posts contain no `@`, so a first-unit prefilter can skip
+  most of the corpus. Even then, the remaining posts would cost roughly 1.2 s
+  at the measured per-post rate, which is slower than the mature bytes
+  baseline and unlikely to beat the end-to-end target.
+- The prefilter is necessary but probably not sufficient. The lazy DFA is
+  likely on the critical path, but milestone 3 must measure the prefixed
+  engine before that decision is recorded.
+- These are engine-only numbers. They exclude Python call overhead and result
+  string construction. The final end-to-end comparison against `rurex` str is
+  milestone 5.
 
-From `rurex` on the same corpus, GIL, one thread:
+Historical `rurex` and CPython numbers remain external context; they were not
+produced by this harness on this machine and are not used as a pass/fail
+gate.
 
-- `rurex` str: about 0.75 s.
-- `rurex` bytes: about 0.35 s.
-- `re` str: about 0.47 s.
-- `re` bytes: about 0.51 s.
+## Commands
 
-The cold transcode is roughly 38 percent of the `rurex` str time.
+    cargo run --release --example bench -- --self-test
+    cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
+    cargo run --release --example bench -- --mode ucs --repeat 3 --threads 4
+    cargo run --release --example bench -- --mode bytes --repeat 3
+    cargo run --release --example bench -- --mode at --repeat 3
 
-## Success criteria
-
-- Beat 0.75 s end to end.
-- Ideally approach 0.45 s.
-- Do not regress ASCII `str`, bytes input, or complex patterns in the
-  integration prototype.
-- Correctness checks pass before any number is recorded.
-
-## Additional patterns
-
-The Telegram pattern is short-string dominated. Also measure:
-
-- A literal scan over an 8 KB text.
-- `\d{3,4}` extraction at several densities.
-- A pattern with a large Unicode class.
-- An anchored pattern and a pattern with alternation.
-
-These prevent tuning the engine only for one corpus and expose per-kind
-classification costs.
-
-## Milestone order
-
-Milestone 3 benchmarks the PikeVM and the prefilter. The result decides
-whether milestone 4 adds a lazy DFA. Do not build the DFA before that
-measurement.
+Add `--json var/bench-results/<name>.json` to keep raw results. Never commit
+the corpus or raw result files.

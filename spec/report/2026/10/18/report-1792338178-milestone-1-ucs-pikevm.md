@@ -51,8 +51,9 @@ References: ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0007
 - [open] Pin Python capture values in unbounded loops during milestone 2. If
   the chosen priority scheme cannot reproduce Python, record a superseding
   ADR rather than silently diverging.
-- [open] Verify the Telegram corpus release URL and both SHA-256 values before
-  milestone 3.
+- [acted] Verify the Telegram corpus release URL and both SHA-256 values
+  before milestone 3. Both checksums were verified; the benchmark enforces the
+  gzip checksum on download and cache.
 - [open] Decide whether ASCII/UNICODE flags are needed for the `str` path
   after milestone 2.
 
@@ -69,7 +70,7 @@ References: ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0007
 ### Tooling/process
 
 - [open] Add the CI task that runs format, clippy, tests, the Python
-  differential harness, and the docs link check.
+  differential harness, the benchmark self-test, and the docs link check.
 - [open] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue noted in the bootstrap report; use the `rg` form
   from `testing.md` until the upstream workflow file is fixed.

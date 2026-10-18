@@ -5,14 +5,17 @@
 - Rust stable, edition 2024, `rust-version = "1.85"` or newer. The installed
   toolchain is selected by `rust-toolchain.toml`.
 - Cargo.
+- Network access for the first Telegram benchmark download, unless the corpus
+  is supplied with `--corpus` or `RUREX_TG_DATA`.
 - Python 3 is needed only for the randomized differential harness, not for
-  building or using the crate.
+  building, using, or benchmarking the crate.
 - Python, PyO3, and maturin are needed only for milestone 5.
 
 ## Dependencies
 
 - `regex-syntax` 0.8 for AST parsing.
-- `regex` 1.13 as a dev-dependency for the common-subset differential tests.
+- Dev-only: `regex` for differential and benchmark baselines; `serde`,
+  `serde_json`, `flate2`, `memchr`, `ureq`, and `sha2` for the benchmark.
 - No Python dependency in the core crate.
 
 Add a dependency only with a reason recorded in the commit message or an ADR.
@@ -27,6 +30,18 @@ Prefer the standard library for anything small.
     cargo fmt
     cargo fmt --check
     python3 tools/python_diff.py --patterns 1000
+
+Benchmark commands:
+
+    cargo run --release --example bench -- --self-test
+    cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
+    cargo run --release --example bench -- --mode ucs --repeat 3
+    cargo run --release --example bench -- --mode bytes --repeat 3
+    cargo run --release --example bench -- --mode at --repeat 3
+
+The benchmark downloads and SHA-256 verifies the corpus into
+`var/bench-data/tg-1m.json.gz` on first use. Use `--corpus` or
+`RUREX_TG_DATA` for an offline copy. It does not need another checkout.
 
 The Python harness builds and runs `examples/oracle.rs`, then compares
 `find_iter` spans with CPython `re`. It accepts `--patterns N` and `--seed S`.

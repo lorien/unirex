@@ -45,3 +45,7 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0008-python-dialect-adapter.md](adr/0008-python-dialect-adapter.md) —
   parse the `regex-syntax` AST, validate a strict Python subset, lower it in
   this crate, and reject Rust-only syntax instead of using Rust semantics.
+- [adr/0009-benchmark-protocol.md](adr/0009-benchmark-protocol.md) —
+  self-contained Telegram benchmark: corpus resolution and checksum, actual
+  UCS kinds, reusable scratch, same-machine Rust baselines, and an independent
+  mention-count oracle.

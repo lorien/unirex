@@ -35,6 +35,7 @@ Run from the repository root:
     cargo test
     cargo test --release
     python3 tools/python_diff.py --patterns 1000
+    cargo run --release --example bench -- --self-test
 
 Timing assertions use release builds. A debug-build timing test is not
 meaningful and must not gate CI. The Python harness needs a `python3` with
@@ -60,10 +61,19 @@ Before every commit:
 5. **No stray files.** `git status --short` shows only intended changes.
    Corpus data, build output, local artifacts, and temporary examples stay
    under `var/` or in `.env`, both gitignored.
+6. **Benchmark portability.** The benchmark must not reference a path outside
+   this repository. Check with:
+
+       rg -n "/web/|/home/" --glob '!target/**' .
+
+   Run `--self-test` after a fresh checkout or a copy outside `/web`. A
+   benchmark result is valid only if its mention count matches the independent
+   naive count; the full corpus must report 334,136 mentions in 186,226 posts.
 
 ## Continuous integration
 
-CI runs the same format, lint, test, and Python differential commands on every
-push. Tool versions are pinned in the workflow to the versions in
+CI runs the same format, lint, test, Python differential, and benchmark
+self-test commands on every push. It does not run the full 1M-post benchmark.
+Tool versions are pinned in the workflow to the versions in
 `rust-toolchain.toml`. A docs check verifies local links and referenced paths
 so documentation cannot silently drift.

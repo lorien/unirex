@@ -28,17 +28,21 @@ criteria are in `spec/docs/milestones.md`.
 
 References: ADR-0003, ADR-0007, ADR-0008
 
-## Milestone 3: Prefilter and first benchmark
+## Milestone 3: Prefilter and prefixed benchmark
 
 Status: new
-Priority: 2
+Priority: 4
 
-Implement a false-negative-free required-first-unit prefilter and benchmark
-the Telegram corpus in UCS-2. Report engine-only and end-to-end numbers
-separately. Decide from the numbers whether milestone 4 is needed. Corpus
-provenance and success criteria are in `spec/docs/benchmarks.md`.
+Add a false-negative-free required-first-unit prefilter to the engine and
+rerun the existing `examples/bench.rs` harness. The milestone 1 engine-only
+baseline is 5.424 s for 1M posts at 1 thread, 1.796 s at 4 threads, versus
+0.151 s for Rust `regex` bytes. About 77 percent of posts contain no `@`, so
+the prefilter can skip most of the corpus. Measure the prefixed engine and
+decide from the numbers whether the prefilter is sufficient or the lazy DFA
+is required. Keep engine-only and eventual end-to-end numbers separate.
+Protocol and corpus provenance: `spec/docs/benchmarks.md`.
 
-References: ADR-0005
+References: ADR-0005, ADR-0009
 
 ## Milestone 4: Optional lazy DFA
 

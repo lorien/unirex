@@ -89,17 +89,20 @@ Milestone 1 is implemented. The current layout is:
 - `spec/skills/` — workflow files.
 - `spec/report/` — session reports.
 - `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` — crate and toolchain.
-- `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, and the
-  `Matches` iterator.
+- `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, `Scratch`, and
+  the `Matches` and `MatchesWith` iterators.
 - `src/ucs.rs` — the three-kind haystack view.
 - `src/compile.rs` — Python-dialect adapter, AST validation, and lowering.
 - `src/pikevm.rs` — the linear-time group-0 simulation.
 - `src/error.rs` — compile and usage errors.
 - `tests/m1.rs` — accepted subset, Python spans, UCS kinds, adversarial
-  timing, and the Rust `regex` common-subset differential.
+  timing, scratch reuse, and the Rust `regex` common-subset differential.
+- `examples/bench.rs` — self-contained Telegram engine-only benchmark.
 - `examples/oracle.rs` — TSV oracle used by the Python differential harness.
 - `tools/python_diff.py` — randomized comparison against CPython `re`.
-- `var/` — gitignored corpus cache and local artifacts.
+- `var/` — gitignored corpus cache, raw benchmark results, and local
+  artifacts.
 
-Later milestones add `src/prefilter.rs`, `src/dfa.rs`, the Telegram benchmark
-harness, and the PyO3 binding. The current plan is in `spec/docs/plan.md`.
+The benchmark harness exists. Later milestones add `src/prefilter.rs`,
+`src/dfa.rs`, and the PyO3 binding. The current plan is in
+`spec/docs/plan.md`.

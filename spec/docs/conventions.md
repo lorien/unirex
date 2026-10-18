@@ -60,9 +60,16 @@ at decision time. The format is defined in
 ## Benchmarks
 
 - A performance claim needs a reproducible benchmark and a recorded baseline.
-- Correctness checks run before timing.
-- Report the machine, tool versions, command, repetition count, and raw
-  numbers. Label synthetic corpora as synthetic.
+- The benchmark must be self-contained: corpus from `--corpus`,
+  `RUREX_TG_DATA`, or the public URL cached under `var/`. Never reference
+  another checkout or a machine-specific path.
+- Verify the corpus SHA-256 before using it. Do not commit the corpus or raw
+  result files.
+- Correctness checks run before timing. Every engine mode must match the
+  independent naive count.
+- Report the machine, tool versions, command, thread count, repetition count,
+  and raw numbers. Label synthetic corpora as synthetic.
+- Keep engine-only numbers separate from end-to-end Python numbers.
 
 ## Commits
 

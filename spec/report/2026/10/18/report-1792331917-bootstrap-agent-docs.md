@@ -28,8 +28,10 @@ Ad-hoc work: the repository was empty and had no git history.
 
 ### Future-task notes
 
-- [open] The first benchmark must pin the baseline and record the machine,
-  operating system, and tool versions, per `spec/docs/benchmarks.md`.
+- [acted] The first benchmark must pin the baseline and record the machine,
+  operating system, and tool versions, per `spec/docs/benchmarks.md`. The
+  self-contained benchmark ran on the full corpus; its report records the
+  machine, Rust version, commands, and raw numbers.
 - [acted] Extend `.gitignore` when the toolchain is chosen. The toolchain is
   Rust; `target/`, Python artifacts, `/var/`, and `/.env` are already
   covered.

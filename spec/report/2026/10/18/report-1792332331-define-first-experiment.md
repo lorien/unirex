@@ -38,9 +38,10 @@ creating `experiments/0001-*` or writing code. The proposal format is in
   behavior in unbounded loops with differential tests. The alias is pinned in
   milestone 1: `\Z` normalizes to `\z`. The capture-value part remains open
   and is tracked in the milestone 1 report.
-- [open] Verify the Telegram corpus release URL and both SHA-256 values before
-  milestone 3. The values came from the `rurex` provenance file and were not
-  re-checked here.
+- [acted] Verify the Telegram corpus release URL and both SHA-256 values
+  before milestone 3. Both the gzip and uncompressed checksums were verified
+  against the cached corpus, and the benchmark verifies the gzip checksum
+  after download.
 - [open] Decide whether ASCII/UNICODE flags are needed for the `str` path
   after milestone 2. They are currently out of scope, and `semantics.md` says
   so.

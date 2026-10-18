@@ -3,38 +3,57 @@
 use crate::Match;
 use crate::compile::{AssertKind, Inst, Program};
 
+/// Reusable PikeVM scratch buffers.
+///
+/// Create one with [`crate::Regex::scratch`] and reuse it across searches to
+/// avoid allocating thread lists and the epsilon-closure stack per call.
+/// A `Scratch` is not shared between threads; give each worker its own.
+pub struct Scratch {
+    clist: ThreadList,
+    nlist: ThreadList,
+    stack: Vec<(usize, usize)>,
+}
+
+impl Scratch {
+    pub(crate) fn new(program_len: usize) -> Scratch {
+        Scratch {
+            clist: ThreadList::new(program_len),
+            nlist: ThreadList::new(program_len),
+            stack: Vec::new(),
+        }
+    }
+}
+
 /// Find the leftmost-first match in `hay` starting at `search_start`.
 ///
 /// When `retry_nonempty_at` is `Some(p)`, an empty match exactly at `p` is
 /// ignored, implementing Python 3.7+ empty-match iteration.
 pub(crate) fn find<U: Copy + Into<u32>>(
     prog: &Program,
+    scratch: &mut Scratch,
     hay: &[U],
     search_start: usize,
     retry_nonempty_at: Option<usize>,
 ) -> Option<Match> {
+    let Scratch {
+        clist,
+        nlist,
+        stack,
+    } = scratch;
+    clist.clear();
+    nlist.clear();
+
     if search_start > hay.len() {
         return None;
     }
 
-    let mut clist = ThreadList::new(prog.insts.len());
-    let mut nlist = ThreadList::new(prog.insts.len());
-    let mut stack = Vec::new();
     let mut matched: Option<Match> = None;
 
     for pos in search_start..=hay.len() {
         nlist.clear();
 
         if matched.is_none() {
-            add_thread(
-                &mut clist,
-                &mut stack,
-                prog,
-                prog.start,
-                pos,
-                pos,
-                hay.len(),
-            );
+            add_thread(clist, stack, prog, prog.start, pos, pos, hay.len());
         }
 
         let mut index = 0;
@@ -44,28 +63,12 @@ pub(crate) fn find<U: Copy + Into<u32>>(
             match prog.insts[pc] {
                 Inst::Char(expected) => {
                     if pos < hay.len() && hay[pos].into() == expected {
-                        add_thread(
-                            &mut nlist,
-                            &mut stack,
-                            prog,
-                            pc + 1,
-                            start,
-                            pos + 1,
-                            hay.len(),
-                        );
+                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay.len());
                     }
                 }
                 Inst::Class(class_id) => {
                     if pos < hay.len() && prog.classes[class_id].contains(hay[pos].into()) {
-                        add_thread(
-                            &mut nlist,
-                            &mut stack,
-                            prog,
-                            pc + 1,
-                            start,
-                            pos + 1,
-                            hay.len(),
-                        );
+                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay.len());
                     }
                 }
                 Inst::Match => {
@@ -85,7 +88,7 @@ pub(crate) fn find<U: Copy + Into<u32>>(
         if matched.is_some() && nlist.is_empty() {
             break;
         }
-        std::mem::swap(&mut clist, &mut nlist);
+        std::mem::swap(clist, nlist);
     }
 
     matched

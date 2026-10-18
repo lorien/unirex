@@ -78,13 +78,35 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 cargo test --release
 python3 tools/python_diff.py --patterns 1000
+cargo run --release --example bench -- --self-test
+cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
 ```
 
 The Python differential harness generates random patterns from the supported
 subset and compares `find_iter` spans with CPython `re`.
 
+## Benchmark
+
+`examples/bench.rs` is a self-contained engine-only Telegram benchmark. It
+downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
+`--corpus` / `RUREX_TG_DATA` for an offline copy. No other checkout is needed.
+
+Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines), and
+`at` (a `memchr` lower bound for a future prefilter).
+
+Single-thread results on the full corpus, Intel i5-8350U, Rust 1.97.1:
+
+- `ucs`: 5.424 s.
+- `ucs`, 4 threads: 1.796 s.
+- `bytes`: 0.151 s.
+- `str`: 0.188 s.
+- `at`: 0.073 s.
+
+The milestone 1 PikeVM is not competitive yet. A prefilter and probably the
+lazy DFA are required; milestone 3 measures the prefilter first.
+
 ## Not in milestone 1
 
 Capture values, Python `\w`/`\d`/`\s` classes, Python word boundaries, `$`,
-flags, lazy repetition, the first-unit prefilter, the lazy DFA, the Telegram
-benchmark, and the PyO3 binding. See `spec/docs/milestones.md`.
+flags, lazy repetition, the first-unit prefilter, the lazy DFA, and the PyO3
+binding. See `spec/docs/milestones.md`.
