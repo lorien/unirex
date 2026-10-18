@@ -29,38 +29,39 @@ at decision time. The format is defined in
   rationale. Do not duplicate details between them.
 - Plan records cite relevant ADRs on their `References:` line.
 
-## Experiments
+## Rust
 
-- Each experiment lives in `experiments/NNNN-slug/`, numbered sequentially.
-  The full lifecycle and layout are in `spec/docs/experiments.md`.
-- The README states the question, hypothesis, baseline, metric, procedure,
-  and verdict before results are interpreted.
-- Pin tool and dependency versions; the experiment must run from a clean
-  checkout with one documented command.
-- Keep raw measurements in the experiment directory. Summaries belong in the
-  session report.
-- Do not tune a benchmark after seeing its result without recording that the
-  procedure changed and rerunning the baseline.
+- Edition 2024, `rust-version = "1.85"`. Build with stable Rust selected by
+  `rust-toolchain.toml`.
+- `cargo fmt` formatting is mandatory; `cargo clippy --all-targets -- -D
+  warnings` must pass.
+- Public items get `///` doc comments. Errors use a typed `Error` enum; do
+  not `unwrap()` or `expect()` on user-controlled input.
+- The core engine is safe Rust. `unsafe` appears only in the Python binding,
+  where validated CPython pointers are converted to slices, and every block
+  carries a safety comment naming the invariant.
+- The hot search loop is monomorphized over the UCS unit type. Do not
+  dispatch on the unit type per character and do not allocate per match.
+- Unit tests live in `#[cfg(test)]` modules next to the code, or in `tests/`
+  for differential and adversarial suites.
+- Do not use the byte-oriented `regex-automata` DFA for matching; its
+  alphabet and spans are UTF-8 bytes. `regex-syntax` is the parser.
 
-## Code
+## Benchmarks
 
-Language and toolchain are chosen by the first experiment and recorded in an
-ADR. Until then, these rules apply to any code that lands:
-
-- Formatting and linting are mandatory and run by the project's single check
-  command.
-- Public interfaces get a short doc comment; scripts get a usage line.
-- No hard-coded credentials. Read secrets from the environment or `.env`.
-- No `sudo` for project commands. If a system tool is missing, ask the
-  owner to install it.
-- Local-only paths and generated files stay out of git: `/var/`, `.env`,
-  build directories, virtualenvs, and caches.
+- A performance claim needs a reproducible benchmark and a recorded baseline.
+- Correctness checks run before timing.
+- Report the machine, tool versions, command, repetition count, and raw
+  numbers. Label synthetic corpora as synthetic.
 
 ## Commits
 
 - One logical change per commit; the subject is short and imperative, for
-  example `Add experiment harness skeleton`.
+  example `Add UCS haystack enum`.
 - The body, when needed, explains what changed and why, not how.
 - Documentation updates for a behavior change belong in the same commit.
   Do not leave docs behind for a follow-up.
-- Never commit secrets or local configuration.
+- Never commit secrets, corpus data, or local configuration. `/var/` and
+  `.env` are gitignored.
+- No `sudo` for project commands. If a system tool is missing, ask the owner
+  to install it.

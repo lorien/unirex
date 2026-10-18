@@ -1,9 +1,10 @@
-# exp_rurex — experimental workspace for rurex
+# exp_rurex — UCS-native linear-time regex engine
 
-`exp_rurex` is the experimental sibling of `rurex`: a place to prototype
-regex-engine ideas, measure them against `rurex` and CPython's `re`, and only
-then propose them upstream. The repository currently contains the spec and
-workflow scaffolding, not an implementation.
+`exp_rurex` is an experimental Rust engine that matches regular expressions
+directly against CPython's PEP 393 UCS-1, UCS-2, and UCS-4 storage, with no
+UTF-8 conversion in the matching path. The long-term goal is an alternative
+`str` path for `rurex`; the first milestones are a standalone crate with no
+Python dependency.
 
 Read these before doing any work:
 

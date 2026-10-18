@@ -19,23 +19,22 @@ Ad-hoc work: the repository was empty and had no git history.
 
 ### Spec/ADR amendments
 
-- [open] Confirm the purpose statement in `overview.md`. It was inferred
-  from the repository name and the sibling `rurex` project, not stated by
-  the owner. If the intended purpose differs, revise `overview.md` and add a
-  superseding ADR; do not edit ADR-0001 in place.
-- [open] Confirm that `experiments/NNNN-slug/` is the right layout before
-  the first experiment creates it. Change `experiments.md` and
-  `conventions.md` together if it is not.
+- [acted] Confirm the purpose statement in `overview.md`. Resolved by
+  `var/handoff.txt`: the project is a UCS-native linear-time regex engine;
+  `overview.md` was rewritten and ADR-0002 records the choice.
+- [acted] Confirm that `experiments/NNNN-slug/` is the right layout. The
+  handoff replaced it with the concrete crate layout and milestones;
+  `experiments.md` was removed and `milestones.md` added.
 
 ### Future-task notes
 
-- [open] The first experiment must pin the `rurex` baseline revision and
-  record the machine, operating system, and tool versions, per
-  `spec/docs/experiments.md`.
-- [open] Extend `.gitignore` when the toolchain is chosen; the current file
-  covers only Python and generic build output.
-- [open] Add implementation directories to the layout in `overview.md` as
-  they appear.
+- [open] The first benchmark must pin the baseline and record the machine,
+  operating system, and tool versions, per `spec/docs/benchmarks.md`.
+- [acted] Extend `.gitignore` when the toolchain is chosen. The toolchain is
+  Rust; `target/`, Python artifacts, `/var/`, and `/.env` are already
+  covered.
+- [acted] Add implementation directories to the layout in `overview.md`.
+  The planned crate layout is now documented there.
 
 ### Tooling/process
 
