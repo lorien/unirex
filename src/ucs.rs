@@ -6,11 +6,16 @@ use memchr::memchr;
 
 /// A UCS code unit that can be searched by a first-unit prefilter.
 pub(crate) trait Unit: Copy + Into<u32> {
+    /// The storage kind this unit represents.
+    const KIND: UcsKind;
+
     /// Find the next index at or after `start` whose unit equals `target`.
     fn find_next_unit(hay: &[Self], target: u32, start: usize) -> Option<usize>;
 }
 
 impl Unit for u8 {
+    const KIND: UcsKind = UcsKind::Ucs1;
+
     fn find_next_unit(hay: &[u8], target: u32, start: usize) -> Option<usize> {
         let byte = u8::try_from(target).ok()?;
         memchr(byte, &hay[start..]).map(|offset| start + offset)
@@ -18,6 +23,8 @@ impl Unit for u8 {
 }
 
 impl Unit for u16 {
+    const KIND: UcsKind = UcsKind::Ucs2;
+
     fn find_next_unit(hay: &[u16], target: u32, start: usize) -> Option<usize> {
         if target > 0xFFFF {
             return None;
@@ -48,6 +55,8 @@ impl Unit for u16 {
 }
 
 impl Unit for u32 {
+    const KIND: UcsKind = UcsKind::Ucs4;
+
     fn find_next_unit(hay: &[u32], target: u32, start: usize) -> Option<usize> {
         if target > 0xFF {
             return hay[start..]

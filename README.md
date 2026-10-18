@@ -96,18 +96,19 @@ Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines), and
 
 Full-corpus results, Intel i5-8350U, Rust 1.97.1:
 
-- UCS engine before prefilter, 1 thread: 5.424 s.
-- UCS engine with prefilter, 1 thread: 1.266 s.
-- UCS engine with prefilter, 4 threads: 0.413 s.
-- Rust `regex` bytes: 0.179 s.
-- Rust `regex` str: 0.215 s.
-- `memchr` `@` scan: 0.077 s.
+- PikeVM, 1 thread: 5.424 s.
+- Prefilter, 1 thread: 1.266 s; 4 threads: 0.413 s.
+- Lazy DFA, 1 thread: 0.363 s; 4 threads: 0.114 s.
+- Rust `regex` bytes: 0.152 s.
+- Rust `regex` str: 0.181 s.
+- `memchr` `@` scan: 0.074 s.
 
-The prefilter is 4.3x faster but the engine is still about 7x slower than the
-bytes baseline at one thread. The lazy DFA is now on the critical path.
+The DFA is 3.5x faster than the prefiltered PikeVM. It is still about 2.4x
+slower than the bytes baseline at one thread, but faster at four threads. The
+next step is the Python binding and the end-to-end comparison.
 
 ## Not yet implemented
 
 Capture values, Python `\w`/`\d`/`\s` classes, Python word boundaries, `$`,
-flags, lazy repetition, the lazy DFA, and the PyO3 binding. See
+flags, lazy repetition, and the PyO3 binding. See
 `spec/docs/milestones.md`.

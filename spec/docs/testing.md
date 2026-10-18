@@ -22,11 +22,16 @@ patterns, and a randomized comparison against CPython `re`.
    supported grammar and compares `find_iter` spans on all strings of length
    0 through 4 over `{a,b,c}`. Run it after any prefilter or search-loop
    change: a prefilter false negative shows up as a missing match.
-5. **Rust `regex` differential tests.** A smaller common subset where Python
+5. **DFA unit tests.** The DFA result must equal the PikeVM result on patterns
+   with alternation priority, greedy repetition, optional prefixes,
+   `^`, `\A`, `\Z`, impossible `Start`/`End` placements, UCS-2, and UCS-4.
+   Class maps must partition the alphabet, and cache overflow must report a
+   fallback rather than a wrong result.
+6. **Rust `regex` differential tests.** A smaller common subset where Python
    and Rust agree; this is not the semantic authority.
-6. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
+7. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
    finish within a fixed budget.
-7. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+8. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
    flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands

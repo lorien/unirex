@@ -6,6 +6,7 @@
 //! Rust `regex` semantics.
 
 mod compile;
+mod dfa;
 mod error;
 mod pikevm;
 mod ucs;

@@ -56,6 +56,10 @@ at decision time. The format is defined in
   when the behavior differs across Python versions.
 - Do not use the byte-oriented `regex-automata` DFA for matching; its
   alphabet and spans are UTF-8 bytes. `regex-syntax` is the parser.
+- The DFA is an optimization; the PikeVM remains the correctness authority.
+  When the DFA cannot represent a pattern or its cache overflows, fall back to
+  the PikeVM. Every DFA path change needs differential tests against the
+  PikeVM and CPython.
 
 ## Benchmarks
 

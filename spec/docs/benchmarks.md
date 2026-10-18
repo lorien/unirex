@@ -59,18 +59,17 @@ result must be labeled synthetic.
 Machine: Intel Core i5-8350U, 8 logical cores, Linux, Rust 1.97.1. Full
 corpus, engine-only Rust harness, `--repeat 3`, median reported.
 
-Without a prefilter, milestone 1:
+Evolution:
 
-- `ucs`, 1 thread: 5.424 s.
-- `ucs`, 4 threads: 1.796 s.
+- Milestone 1 PikeVM, 1 thread: 5.424 s.
+- Milestone 3 prefilter, 1 thread: 1.266 s; 4 threads: 0.413 s.
+- Milestone 4 DFA, 1 thread: 0.363 s; 4 threads: 0.114 s.
 
-With the first-unit prefilter, milestone 3:
+Milestone 4 baselines on the same run:
 
-- `ucs`, 1 thread: 1.266 s, first 1.275 s, 334,136 mentions.
-- `ucs`, 4 threads: 0.413 s.
-- `bytes`, 1 thread: 0.179 s, with 0.15 s to 0.18 s across runs.
-- `str`, 1 thread: 0.215 s.
-- `at`, 1 thread: 0.077 s, 346,251 marks.
+- Rust `regex` bytes, 1 thread: 0.152 s.
+- Rust `regex` str, 1 thread: 0.181 s.
+- `memchr` `@` scan, 1 thread: 0.074 s.
 
 Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
 UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing every
@@ -78,15 +77,16 @@ post to UCS-2 would misrepresent about 46 percent of the corpus.
 
 Interpretation:
 
-- The prefilter is about 4.3 times faster than the unfiltered PikeVM.
-- It is still about 7 times slower than the Rust `regex` bytes engine at one
-  thread, and about 2.3 times slower with four threads.
-- The candidate scan is no longer the main cost. The remaining time is the
-  PikeVM work at each `@` candidate. A lazy DFA is required for a competitive
-  engine; ADR-0010 records that decision.
-- These are engine-only numbers. They exclude Python call overhead and result
-  string construction. The final end-to-end comparison against `rurex` str is
-  milestone 5.
+- The DFA is about 3.5 times faster than the prefiltered PikeVM.
+- It is about 2.4 times slower than the Rust `regex` bytes engine at one
+  thread. With four threads it is faster than the single-thread bytes baseline
+  (0.114 s versus 0.152 s).
+- The single-thread engine-only result is now 0.363 s. The end-to-end target
+  is 0.75 s, so the remaining question is Python binding and result
+  construction overhead. That is milestone 5; engine-only numbers must not be
+  compared directly with `rurex` end-to-end time.
+- Patterns without a safe first-unit set still use the PikeVM. The DFA is an
+  optimization, not a change in the supported language or correctness.
 
 Historical `rurex` and CPython numbers remain external context; they were not
 produced by this harness on this machine and are not used as a pass/fail

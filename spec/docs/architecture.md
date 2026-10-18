@@ -162,23 +162,34 @@ ADR-0010.
 
 ## Lazy DFA
 
-Milestone 4 adds a lazy DFA over code-point equivalence classes. The prefilter
-benchmark made this the next required engine change:
+Milestone 4 adds a lazy DFA over code-point equivalence classes. It is used
+when a safe first-unit set exists; the prefilter supplies candidate starts and
+the DFA scans forward from each candidate.
 
-- Collect all class-range boundaries used by the pattern and assign
-  equivalence-class IDs.
-- Build a per-kind class map: 256 entries for UCS-1, 64K entries or an
-  interval map for UCS-2, interval search for UCS-4.
-- Determinize on demand. A DFA state is a set of NFA states; transitions are
-  cached in a hash map with a fixed state cap.
-- On cache overflow, clear the cache and fall back to the PikeVM.
-- Use the DFA to find match start and end. For captures, run the PikeVM
-  anchored at the start over the matched window.
+- Every literal and class range contributes boundaries. Each interval between
+  boundaries is one equivalence class.
+- Class maps are built for UCS-1 (256 entries), UCS-2 (65,536 entries), and
+  UCS-4 (0x110000 entries). A map from a pattern that exceeds 65,535 classes
+  disables the DFA.
+- A DFA state holds consuming NFA instructions in priority order, pending
+  `Assert(End)` instructions in priority order, and a match flag.
+- Epsilon closure runs in priority order. The first `Match` marks the current
+  position and prunes lower-priority states. A later match from a surviving
+  higher-priority path overrides the previous end.
+- `Assert(Start)` is resolved from whether the candidate is at position zero.
+  `Assert(End)` is kept pending until the final position, then resolved in a
+  final closure.
+- States and transitions are cached in `Scratch`, not in `Regex`, so workers
+  do not contend. The state cache is capped at 4,096 states.
+- On cache overflow, class-count overflow, or an out-of-contract UCS-4 unit,
+  the DFA is disabled for that scratch and the PikeVM takes over.
+- The DFA is an optimization, not the correctness authority. The PikeVM
+  remains the general matcher for patterns without a safe first set, for
+  captures, and for any construct outside the DFA path.
 
-The byte-oriented `regex-automata` DFA is not reused. Its input is `&[u8]`,
-its spans are byte offsets, its byte classes are 256 entries, and Unicode
-classes are compiled to UTF-8 byte sequences. A UCS engine needs a different
-alphabet and compiler.
+The full benchmark improved from 1.266 s to 0.363 s at one thread and from
+0.413 s to 0.114 s at four threads. The Rust `regex` bytes baseline is about
+0.152 s at one thread. See `benchmarks.md`.
 
 ## Python binding
 

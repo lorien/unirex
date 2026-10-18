@@ -2,6 +2,7 @@
 
 use crate::Match;
 use crate::compile::{AssertKind, Inst, Program};
+use crate::dfa;
 use crate::ucs::Unit;
 
 /// Reusable PikeVM scratch buffers.
@@ -13,6 +14,8 @@ pub struct Scratch {
     clist: ThreadList,
     nlist: ThreadList,
     stack: Vec<(usize, usize)>,
+    dfa: Option<dfa::Cache>,
+    dfa_disabled: bool,
 }
 
 impl Scratch {
@@ -21,15 +24,47 @@ impl Scratch {
             clist: ThreadList::new(program_len),
             nlist: ThreadList::new(program_len),
             stack: Vec::new(),
+            dfa: None,
+            dfa_disabled: false,
         }
     }
+}
+
+/// Find a match, preferring the lazy DFA and falling back to the PikeVM.
+pub(crate) fn find<U: Unit>(
+    prog: &Program,
+    scratch: &mut Scratch,
+    hay: &[U],
+    search_start: usize,
+    retry_nonempty_at: Option<usize>,
+) -> Option<Match> {
+    if prog.first.is_some() && !scratch.dfa_disabled {
+        if scratch.dfa.is_none() {
+            match dfa::Cache::new(prog) {
+                Some(cache) => scratch.dfa = Some(cache),
+                None => scratch.dfa_disabled = true,
+            }
+        }
+        let result = scratch
+            .dfa
+            .as_mut()
+            .map(|cache| dfa::find_candidates(prog, cache, hay, search_start, retry_nonempty_at));
+        if let Some(result) = result {
+            match result {
+                dfa::FindResult::Match(found) => return Some(found),
+                dfa::FindResult::NoMatch => return None,
+                dfa::FindResult::Overflow => scratch.dfa_disabled = true,
+            }
+        }
+    }
+    find_pike(prog, scratch, hay, search_start, retry_nonempty_at)
 }
 
 /// Find the leftmost-first match in `hay` starting at `search_start`.
 ///
 /// When `retry_nonempty_at` is `Some(p)`, an empty match exactly at `p` is
 /// ignored, implementing Python 3.7+ empty-match iteration.
-pub(crate) fn find<U: Unit>(
+fn find_pike<U: Unit>(
     prog: &Program,
     scratch: &mut Scratch,
     hay: &[U],
@@ -40,6 +75,8 @@ pub(crate) fn find<U: Unit>(
         clist,
         nlist,
         stack,
+        dfa: _,
+        dfa_disabled: _,
     } = scratch;
     clist.clear();
     nlist.clear();
@@ -189,5 +226,82 @@ impl ThreadList {
 
     fn is_empty(&self) -> bool {
         self.pcs.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compile::compile;
+
+    fn compare(pattern: &str, hay: &str) {
+        let program = compile(pattern).unwrap();
+        let units: Vec<u8> = hay.bytes().collect();
+        let mut dfa_scratch = Scratch::new(program.insts.len());
+        let mut pike_scratch = Scratch::new(program.insts.len());
+        let dfa = find(&program, &mut dfa_scratch, &units, 0, None).map(|m| (m.start(), m.end()));
+        let pike =
+            find_pike(&program, &mut pike_scratch, &units, 0, None).map(|m| (m.start(), m.end()));
+        assert_eq!(dfa, pike, "pattern {pattern:?} haystack {hay:?}");
+    }
+
+    #[test]
+    fn dfa_matches_pikevm_on_supported_patterns() {
+        let patterns = [
+            "abc",
+            "a|ab",
+            "ab|a",
+            "a*",
+            "a+b",
+            "a?b",
+            "(a|)b",
+            "(a|b)*c",
+            "^abc",
+            r"\Aabc",
+            r"abc\Z",
+            r"a\Z|b",
+            r"\Za|a",
+            "[a-c]+x",
+            "[^a]+",
+            ".",
+            "a{2,3}",
+            "(a*)*b",
+            "a*b",
+            "a|b|c",
+            r"(a|ab)\Z",
+            r"(ab|a)\Z",
+            r"a\Z|ab",
+            r"^b|a",
+            r"\A(b|a)",
+        ];
+        let hays = [
+            "", "a", "b", "ab", "abc", "xabc", "abcx", "aaab", "baa", "zzb", "\n", "ab\n",
+        ];
+        for pattern in patterns {
+            for hay in hays {
+                compare(pattern, hay);
+            }
+        }
+    }
+
+    #[test]
+    fn dfa_matches_pikevm_on_ucs2_and_ucs4() {
+        let program = compile("β+").unwrap();
+        let two: Vec<u16> = "aββc".chars().map(|c| c as u16).collect();
+        let mut dfa_scratch = Scratch::new(program.insts.len());
+        let mut pike_scratch = Scratch::new(program.insts.len());
+        assert_eq!(
+            find(&program, &mut dfa_scratch, &two, 0, None).map(|m| (m.start(), m.end())),
+            find_pike(&program, &mut pike_scratch, &two, 0, None).map(|m| (m.start(), m.end()))
+        );
+
+        let program = compile("𐐷+").unwrap();
+        let four: Vec<u32> = "a𐐷𐐷b".chars().map(|c| c as u32).collect();
+        let mut dfa_scratch = Scratch::new(program.insts.len());
+        let mut pike_scratch = Scratch::new(program.insts.len());
+        assert_eq!(
+            find(&program, &mut dfa_scratch, &four, 0, None).map(|m| (m.start(), m.end())),
+            find_pike(&program, &mut pike_scratch, &four, 0, None).map(|m| (m.start(), m.end()))
+        );
     }
 }

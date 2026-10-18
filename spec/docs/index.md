@@ -52,3 +52,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0010-lazy-dfa-required.md](adr/0010-lazy-dfa-required.md) — the
   prefilter improves the engine 4.3x but not enough; the lazy DFA is now
   required and milestone 4 is prioritized.
+- [adr/0011-dfa-match-tracking.md](adr/0011-dfa-match-tracking.md) — lazy DFA
+  state representation, leftmost-first match pruning, pending end assertions,
+  bounded cache, and PikeVM fallback.

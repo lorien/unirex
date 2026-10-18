@@ -59,9 +59,9 @@ per-call overhead. The lazy DFA is required.
 
 ### Spec/ADR amendments
 
-- [open] Milestone 4 must implement the lazy DFA with a bounded state cache,
-  PikeVM fallback, and anchored PikeVM for captures. Keep the prefilter as the
-  candidate selector.
+- [acted] Milestone 4 must implement the lazy DFA with a bounded state cache,
+  PikeVM fallback, and anchored PikeVM for captures. The DFA is implemented in
+  `src/dfa.rs`; the full corpus improved to 0.363 s at one thread.
 - [open] The first-unit set is disabled for negated and broad classes. A later
   optimization can represent complements and narrow broad classes; it is not
   needed for the Telegram pattern.
@@ -74,13 +74,15 @@ per-call overhead. The lazy DFA is required.
 
 ### Future-task notes
 
-- [open] The DFA must preserve the existing Python 3.7+ empty-match iteration
+- [acted] The DFA must preserve the existing Python 3.7+ empty-match iteration
   and leftmost-first behavior, and must fall back to the PikeVM on cache
-  overflow.
-- [open] Compare DFA results against both the PikeVM and CPython on the
-  differential suites before trusting the benchmark.
-- [open] Keep the prefilter and DFA candidate selection consistent; a DFA
-  anchored at each candidate is the intended integration.
+  overflow. DFA and PikeVM agree on the targeted assertion/priority tests, and
+  overflow falls back.
+- [acted] Compare DFA results against both the PikeVM and CPython on the
+  differential suites before trusting the benchmark. The randomized Python
+  differential ran 40,414 cases with zero mismatches.
+- [acted] Keep the prefilter and DFA candidate selection consistent; the DFA
+  is anchored at each prefilter candidate.
 - [open] Revisit the end-to-end target only after the DFA and the Python
   binding exist.
 

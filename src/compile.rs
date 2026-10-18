@@ -131,6 +131,10 @@ impl Class {
         }
     }
 
+    pub(crate) fn ranges(&self) -> &[(u32, u32)] {
+        &self.ranges
+    }
+
     pub(crate) fn contains(&self, code_point: u32) -> bool {
         let inside = self
             .ranges
