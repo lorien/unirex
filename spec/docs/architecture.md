@@ -1,17 +1,49 @@
 # Architecture
 
+## Current state
+
+Milestone 1 is implemented: a standalone crate with a strict Python-dialect
+subset, a Thompson program, and a group-0 PikeVM over UCS-1, UCS-2, and UCS-4.
+Captures, the remaining Python classes and flags, the prefilter, the lazy DFA,
+the benchmark, and the Python binding are later milestones.
+
 ## Compilation pipeline
 
-1. Pattern text is parsed by `regex-syntax` into HIR. `regex-syntax` is the
-   parser; the project does not write its own.
-2. HIR is lowered into a `Program`: a flat instruction vector plus a class
-   set. Case folding, Unicode categories, and `\w`-style classes are resolved
-   through HIR at compile time, not at match time.
-3. The program is run by the PikeVM. A later milestone may add a lazy DFA for
-   match start/end, with the PikeVM kept as the fallback and capture engine.
+1. Pattern text goes through a Python-dialect adapter. `\Z` is normalized to
+   `\z`; numeric escapes are validated with Python's rule that `\1` and `\11`
+   are backreferences outside a class but octal inside one, and that octal
+   values stay within `0o377`; Rust-only syntax is rejected.
+2. `regex-syntax` parses the normalized pattern into its AST. The adapter uses
+   the AST, not HIR, because the AST preserves the distinction between `$` and
+   `\Z` and lets the adapter reject Rust-only constructs before they acquire
+   Rust semantics.
+3. This crate validates the strict milestone 1 subset and lowers the AST into
+   a `Program`: a flat instruction vector plus a class set. Case folding and
+   Unicode categories are resolved at compile time in later milestones.
+4. The PikeVM runs the program. A later milestone may add a lazy DFA for match
+   start and end, with the PikeVM kept as the fallback and capture engine.
 
-Compilation is a pure function of the pattern and flags. A compiled `Regex`
-is immutable and can be reused across haystacks and threads.
+Compilation is a pure function of the pattern. A compiled `Regex` is immutable
+and can be reused across haystacks and threads.
+
+## Python dialect adapter
+
+`regex-syntax` is a Rust-dialect parser, not a neutral syntax tree. Milestone 1
+therefore accepts a strict subset and rejects everything else with a positioned
+error:
+
+- Accepted: literals, `.`, explicit classes and ranges, alternation, greedy
+  repetition, `^`, `\A`, `\Z`, `\z`, grouping, fixed-width hex escapes, and
+  Python octal escapes.
+- Rejected: `$`, `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`, flags,
+  lazy repetition, named groups, `\N{...}`, `\p{...}`, brace hex, Rust word
+  assertions, class set operators, nested classes, POSIX classes, repetition
+  of an assertion, and all by-design-unsupported constructs.
+
+Milestone 2 adds Python's `\w`, `\d`, and `\s` class tables, Python word
+boundaries, `$`, flags, lazy repetition, and captures. The class tables must
+be generated from CPython data for a documented Unicode version; the engine
+must not silently substitute Rust `regex` class definitions.
 
 ## Haystack
 
@@ -25,8 +57,8 @@ The public haystack type is an enum, not a trait object:
 
 It exposes `len()` in code units, `get(i) -> u32`, `kind()`, and slicing by
 character index for building results. `get` widens a unit to `u32`. The hot
-search loop is monomorphized for the three unit types, or the unit type is
-dispatched once per search. It is never dispatched per character.
+search loop is monomorphized for the three unit types by dispatching once in
+`Regex::find_from`. It is never dispatched per character.
 
 The core crate accepts safe slices only. The unsafe work of deriving those
 slices from a Python `str` belongs to the binding (milestone 5) and is
@@ -40,66 +72,69 @@ The lowered program uses a small Thompson-style instruction set:
 - `Class(class_id)` — consume one code point in the compiled class.
 - `Split(a, b)` — epsilon transition to either target, in priority order.
 - `Jump(pc)` — epsilon transition to one target.
-- `Save(slot)` — record the current position in a capture slot.
-- `Assert(kind)` — zero-width assertion: start, end, line start, line end,
-  word boundary, or not-word-boundary.
+- `Assert(kind)` — zero-width assertion: start or end in milestone 1.
 - `Match` — report the current position.
 
-Repetition is compiled to `Split` and `Jump` with explicit counters when a
-bounded `{n,m}` needs them. An empty-body repetition is compiled so that it
-cannot loop forever without consuming input.
+Repetition is compiled to `Split` and `Jump`; bounded `{n,m}` is unrolled with
+a hard repetition limit. An empty-body repetition compiles to an epsilon loop
+that the visited set terminates.
+
+Milestone 2 adds `Save(slot)` for captures and assertions for `$` and Python
+word boundaries.
 
 ## Classes
 
 The canonical class form is a sorted, non-overlapping list of inclusive
-`(u32, u32)` ranges. Per haystack kind, a compiled class may also carry an
-accelerator:
+`(u32, u32)` ranges, plus a negation flag. Membership uses binary search.
+Milestone 1 lowers only explicit classes and `.`; per-kind accelerators
+(bitmaps, two-level tables) are added with the prefilter in milestone 3.
 
-- UCS-1: a 256-bit bitmap.
-- UCS-2: a 64K-bit bitmap (8 KB) when a pattern uses few classes, otherwise
-  sorted ranges. The choice is per pattern and bounded by memory limits.
-- UCS-4: sorted ranges with binary search; a two-level table for the BMP may
-  be added if profiling shows it matters.
-
-Every accelerator is derived from the same range list, so membership is
-identical across kinds. Class maps for the lazy DFA are separate: they map
-code units to equivalence-class IDs and are built only in milestone 4.
+Every accelerator must be derived from the same range list, so membership is
+identical across UCS kinds. Class maps for the lazy DFA are separate and are
+built only in milestone 4.
 
 ## PikeVM
 
 The matcher is the standard linear-time PikeVM:
 
 - Two thread lists, current and next.
-- A sparse set of visited program counters prevents duplicate threads at one
-  position.
-- A thread holds a program counter and, when captures are enabled, a slot
-  array of `2 * (groups + 1)` offsets.
+- A sparse set of visited program counters, keyed by a generation counter,
+  prevents duplicate threads at one position.
+- A thread holds a program counter and the start position of its search. This
+  is the group-0 replacement for a full capture slot array.
 - Epsilon closure follows `Split`, `Jump`, `Save`, and `Assert` without
-  consuming input. Assertions read the haystack and the current position.
+  consuming input. Assertions read the current position and the haystack
+  length.
 - Consuming instructions advance by one code unit.
 - Thread order encodes leftmost-first priority: the earlier thread in the
   list wins when two threads reach `Match` at the same position.
 - For an unanchored search, a new start thread is added at each position
   until a match is found. The current position is then completed to select
   the best match at the leftmost start.
-- For group-0-only searches, slot tracking is skipped entirely.
-- Allocations are bounded and reused per `Regex` or per search context.
+- Allocations are bounded and reused per search.
 
 Complexity is O(n * m) in haystack length and program size, with no
 backtracking.
 
+### Empty matches
+
+`find_iter` implements the Python 3.7+ rule. After an empty match at position
+`p`, the next search starts at `p` but ignores an empty match exactly at `p`.
+This allows a non-empty alternative at the same position to be found, then
+advances one code point when none exists. The test suite checks the rule
+against CPython spans.
+
 ## Captures
 
 Milestone 2 adds slot arrays to the PikeVM. The leftmost-first rule is
-enforced by thread order, not by post-processing spans. Zero-width iteration
-follows Python 3.7 and later: after an empty match at position `p`, retry at
-`p` requiring a non-empty match, then advance one code point. The exact rule
-and its tests are in `spec/docs/semantics.md`.
+enforced by thread order, not by post-processing spans. Capture values in
+unbounded loops are matched against Python `re` and documented if a divergence
+remains.
 
 ## Prefilter
 
-Milestone 3 derives the possible first code points from the HIR and scans the
-UCS buffer before entering the engine. For ASCII first units in UCS-2 and
+Milestone 3 derives the possible first code points from the pattern and scans
+the UCS buffer before entering the engine. For ASCII first units in UCS-2 and
 UCS-4, a raw-byte `memchr` with unit alignment and zero-byte checks is
 effective. Multiple candidates use `memchr2` or `memchr3`, or a small set.
 Non-ASCII first units are compared as units or with a range check.
@@ -147,18 +182,19 @@ Milestone 5 uses PyO3 and maturin. The binding:
 
 - The core engine uses safe slices. The only `unsafe` is constructing slices
   from validated CPython pointers, with a documented safety argument.
-- The DFA cache has a hard state cap. The PikeVM thread lists and visited set
-  are sized by the program, not by the haystack.
+- Compile limits bound pattern length, program size, repetition count, class
+  count, and total class ranges.
+- The DFA cache will have a hard state cap. The PikeVM thread lists and
+  visited set are sized by the program, not by the haystack.
 - Per-call allocation is avoided on the hot path; buffers are reused.
-- Compile-time limits bound pattern size, program size, and class-map memory.
 
 ## Module layout
 
-    src/lib.rs        public API and re-exports
-    src/ucs.rs        Ucs enum, unit access, slicing
-    src/compile.rs    regex-syntax HIR to Program
-    src/classes.rs    class ranges and per-kind membership
+    src/lib.rs        public API, Match, Regex, Matches
+    src/ucs.rs        Ucs enum, kind, unit access, slicing
+    src/compile.rs    Python-dialect adapter, AST validation, lowering
     src/pikevm.rs     thread lists, epsilon closure, matching
-    src/prefilter.rs  required first-unit extraction and scan
-    src/dfa.rs        optional lazy DFA (milestone 4)
     src/error.rs      error types and displays
+    examples/oracle.rs  TSV oracle used by the Python differential harness
+    tools/python_diff.py  randomized comparison against CPython re
+    tests/m1.rs       accepted subset, Python spans, UCS kinds, adversarial

@@ -35,6 +35,14 @@ at decision time. The format is defined in
   `rust-toolchain.toml`.
 - `cargo fmt` formatting is mandatory; `cargo clippy --all-targets -- -D
   warnings` must pass.
+- Python `re` is the semantic authority for the supported dialect. Reject
+  syntax that cannot be made Python-exact; never silently accept Rust `regex`
+  semantics.
+- Parse with the `regex-syntax` AST and lower it in this crate. Do not lower
+  `regex-syntax` HIR: it applies Rust class, assertion, and flag semantics and
+  loses the distinction between `$` and `\Z`.
+- Numeric escapes follow Python's rules: backreferences outside a class,
+  octal inside a class, and octal values at most `0o377`.
 - Public items get `///` doc comments. Errors use a typed `Error` enum; do
   not `unwrap()` or `expect()` on user-controlled input.
 - The core engine is safe Rust. `unsafe` appears only in the Python binding,
@@ -43,7 +51,9 @@ at decision time. The format is defined in
 - The hot search loop is monomorphized over the UCS unit type. Do not
   dispatch on the unit type per character and do not allocate per match.
 - Unit tests live in `#[cfg(test)]` modules next to the code, or in `tests/`
-  for differential and adversarial suites.
+  for differential and adversarial suites. Python-generated span
+  expectations belong in the test file with a note naming the CPython version
+  when the behavior differs across Python versions.
 - Do not use the byte-oriented `regex-automata` DFA for matching; its
   alphabet and spans are UTF-8 bytes. `regex-syntax` is the parser.
 

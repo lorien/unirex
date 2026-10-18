@@ -1,0 +1,13 @@
+[package]
+name = "exp_rurex"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Experimental linear-time regex engine over CPython UCS storage"
+
+[dependencies]
+regex-syntax = "0.8"
+
+[dev-dependencies]
+regex = "1.13"

@@ -1,30 +1,30 @@
 # Testing and Checks
 
+## Current state
+
+Milestone 1 is implemented. The suite covers the strict Python subset, the
+Python 3.7+ empty-match rule, all three UCS kinds, lone surrogates, adversarial
+patterns, and a randomized comparison against CPython `re`.
+
 ## Test layers
 
-1. **Compiler unit tests.** Every supported HIR variant, repetition
-   expansion, class compilation, flag handling, and error case. Errors carry
-   the pattern position when available.
-2. **PikeVM unit tests.** Empty pattern, empty matches, anchors, multiline,
-   dot, greedy and lazy repetition, alternation priority, captures later,
-   unmatched groups, and zero-width stepping.
-3. **Differential tests, milestone 1.** Compare against the Rust `regex`
-   crate on UTF-8 text decoded to UCS-1, UCS-2, and UCS-4 code units, using
-   patterns inside the supported subset and avoiding the divergences in
-   `spec/docs/semantics.md`.
-4. **Differential tests, milestone 2.** Compare against Python `re` on
-   generated UCS-1, UCS-2, and UCS-4 strings and a curated pattern corpus.
-   Draw from CPython's `test_re` and the rust-lang/regex `testdata` cases
-   where the syntax is supported.
-5. **Fuzz tests.** Random patterns and haystacks. The engine must never report
-   a match where the reference has none, or the reverse, for the supported
-   subset. Fuzz targets live with the crate and have a time budget.
-6. **Adversarial-time tests.** `(a+)+b`, `(x+x+)+y`, large bounded
-   repetitions, and huge character classes must finish within a fixed budget.
-7. **Surrogate tests.** Lone UCS-2 surrogates are matchable as units, are not
-   paired, and do not raise an encoding error.
-8. **Memory tests.** DFA cache cap, fallback on overflow, and no unbounded
-   per-call allocation.
+1. **Compiler and adapter tests.** Accepted and rejected syntax with error
+   positions, `\Z` normalization, Python numeric-escape rules, `$` and `\w`
+   rejection, class set operations, nested classes, and Rust-only assertions.
+2. **Unit tests.** `Ucs` access, kind preservation, slicing, and lone
+   surrogates.
+3. **Matching tests.** Literals, `.`, explicit classes, alternation, greedy
+   repetition, anchors, grouping, and class edge cases.
+4. **Python differential tests.** `tests/m1.rs` pins spans generated with
+   CPython `re`. `tools/python_diff.py` generates random patterns from the
+   supported grammar and compares `find_iter` spans on all strings of length
+   0 through 4 over `{a,b,c}`.
+5. **Rust `regex` differential tests.** A smaller common subset where Python
+   and Rust agree; this is not the semantic authority.
+6. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
+   finish within a fixed budget.
+7. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+   flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands
 
@@ -34,9 +34,11 @@ Run from the repository root:
     cargo clippy --all-targets -- -D warnings
     cargo test
     cargo test --release
+    python3 tools/python_diff.py --patterns 1000
 
 Timing assertions use release builds. A debug-build timing test is not
-meaningful and must not gate CI.
+meaningful and must not gate CI. The Python harness needs a `python3` with
+`re`; it does not link Python into the crate.
 
 ## Per-session final checks
 
@@ -56,12 +58,12 @@ Before every commit:
    same commit. The remaining set must contain only items that are genuinely
    still open or undecided.
 5. **No stray files.** `git status --short` shows only intended changes.
-   Corpus data, build output, and local artifacts stay under `var/` or in
-   `.env`, both gitignored.
+   Corpus data, build output, local artifacts, and temporary examples stay
+   under `var/` or in `.env`, both gitignored.
 
 ## Continuous integration
 
-CI runs the same format, lint, and test commands on every push. Tool versions
-are pinned in the workflow to the versions in `rust-toolchain.toml`. A docs
-check verifies local links and referenced paths so documentation cannot
-silently drift.
+CI runs the same format, lint, test, and Python differential commands on every
+push. Tool versions are pinned in the workflow to the versions in
+`rust-toolchain.toml`. A docs check verifies local links and referenced paths
+so documentation cannot silently drift.

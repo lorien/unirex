@@ -2,74 +2,121 @@
 
 ## Compatibility target
 
-The target is Python `re` behavior for the supported syntax. During milestone
-1 the differential oracle is the Rust `regex` crate on UTF-8 text decoded to
-code points, because the engine is group-0-only and has no captures yet.
-Milestone 2 switches the oracle to Python `re` on generated UCS-1, UCS-2, and
-UCS-4 strings.
+The target is Python `re` behavior for the supported syntax. Milestone 1
+accepts a strict subset and rejects everything else, so no accepted pattern
+can silently acquire Rust `regex` semantics.
 
-Where Python `re` and Rust `regex` disagree, Python wins for the final engine
-unless a divergence is explicitly documented here. Milestone 1 differential
-patterns avoid the known disagreements listed below.
+The oracle for the accepted subset is CPython `re` itself. `tests/m1.rs` pins
+spans that were generated with CPython, and `tools/python_diff.py` compares
+random patterns and haystacks against `re`. The Rust `regex` crate is used
+only for the smaller common subset where both engines agree.
 
-## Supported syntax
+Milestone 2 adds the remaining Python classes, flags, `$`, and word
+boundaries, and switches the full differential suite to Python `re` on
+generated UCS-1, UCS-2, and UCS-4 strings.
 
-- Literals, including escaped metacharacters.
-- `.` — any code point except newline, or any code point with `s`.
-- Character classes, including negated classes and the Unicode classes
-  produced by `regex-syntax` HIR.
+## Milestone 1 subset
+
+Accepted:
+
+- Literals and escaped metacharacters.
+- `.`
+- Explicit character classes and ranges, including negation.
 - Alternation.
-- Greedy and lazy `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
-- Anchors `^`, `$`, `\A`, `\z`, `\b`, `\B`.
-- Capture groups and non-capturing groups.
-- Flags `i` (ignore case), `m` (multiline), `s` (dot matches newline), `x`
-  (verbose), including scoped inline groups.
+- Greedy `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
+- Anchors `^`, `\A`, `\Z`, `\z`.
+- Grouping: `(...)`, `(?:...)`, and capture groups. Capture values are not
+  exposed yet; only group 0 is returned.
+- Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
+  octal escapes.
 
-Unsupported by design and rejected at compile time:
+Rejected with a positioned error:
 
-- Backreferences.
-- Lookaround: `(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`.
-- Atomic groups.
-- Possessive quantifiers.
-- Conditional groups.
-- Recursion.
-
-`regex-syntax` performs the parse; the lowering stage rejects any HIR variant
-it does not support. Nothing unsupported is silently approximated.
+- `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`.
+- `$`.
+- Flags `i`, `m`, `s`, `x`, and every inline or scoped flag group.
+- Lazy repetition.
+- Named capture groups.
+- `\N{...}`, `\p{...}`, and brace hex such as `\x{41}`.
+- Rust assertions `\b{...}`, `\<`, `\>`.
+- Class set operators `&&`, `--`, `~~`, nested classes, and POSIX classes.
+- Repetition of an assertion, for example `^*` or `\A*`.
+- Backreferences, lookaround, atomic groups, possessive quantifiers,
+  conditionals, and recursion.
 
 ## Matching rules
 
 ### Leftmost-first
 
 The engine reports the match that starts earliest. Among matches at the same
-start, alternation order and greedy or lazy quantifiers decide, exactly as in
-Python `re`. This is not POSIX leftmost-longest.
+start, alternation order and greedy quantifiers decide, as in Python `re`.
+This is not POSIX leftmost-longest.
 
 ### Empty matches and iteration
 
 Python 3.7 and later uses this rule: after an empty match at position `p`,
 retry at `p` requiring a non-empty match; if that fails, advance one code
-point and continue. Milestone 2 implements and tests this against `re`,
-including patterns that can match empty at the start or end of the haystack.
+point and continue. `find_iter` implements this rule and is tested against
+CPython spans, including `x*` on `"ab"` and `|a` on `"a"`.
 
 ### `$`
 
-Python `re` lets `$` match before a trailing newline. Rust `regex` does not.
-The final engine follows Python. Milestone 1's differential corpus avoids `$`
-until the behavior is implemented and tested.
+`$` is rejected in milestone 1. Python lets it match before a trailing
+newline; Rust `regex` does not, and HIR `EndLF` matches before any newline.
+Milestone 2 implements Python `$` with a dedicated assertion.
 
 ### `\b` and `\w`
 
-Word characters come from the HIR Unicode word class, not from an ASCII
-shortcut. A word boundary checks the code points on both sides of the current
-position. If the class is too large to compile efficiently, the fallback is
-documented; it is never a silent ASCII-only substitution.
+Rejected in milestone 1. They use Python's word definition, which is not the
+same as Rust `regex`'s: Rust includes combining marks, connector punctuation,
+and join controls, while Python means Unicode alphanumerics plus `_`.
+Milestone 2 generates Python-equivalent tables and uses them for `\w`, `\b`,
+`\B`, and `\d`/`\s` where needed.
 
 ### End-of-text spelling
 
-The crate accepts `\z` as the end-of-text anchor, matching `regex-syntax`.
-Python spells it `\Z` through 3.13 and accepts `\z` from 3.14. The Python
-binding maps Python's `\Z` to the crate's `\z` and documents the mapping.
+The crate accepts both `\Z` and `\z` as the end-of-text anchor. Python 3.10
+through 3.13 spell it `\Z`; Python 3.14 also accepts `\z`. The adapter
+normalizes `\Z` to `\z` before parsing. `\Z` matches only at the end, not
+before a trailing newline.
+
+### Numeric escapes
+
+Python's rule is enforced:
+
+- Outside a character class, `\1` and `\11` are backreferences and are
+  rejected. A backslash followed by exactly three octal digits, such as
+  `\111`, is an octal escape.
+- Inside a character class, numeric escapes are octal regardless of the
+  number of digits, so `[\1]` matches U+0001 and `[\11]` matches U+0009.
+- An octal escape whose value exceeds `0o377` is rejected, as in Python.
+- `\8` and `\9` are rejected.
+
+`\xNN`, `\uNNNN`, and `\UNNNNNNNN` are accepted. Brace forms such as
+`\x{41}` are rejected because Python does not accept them.
+
+### Character classes
+
+Milestone 1 supports literal characters and ranges only. Python treats
+`&&`, `--`, `~~`, nested `[`, and POSIX forms as literals or as ordinary
+class contents; Rust `regex` gives them set-operation meanings. They are
+rejected instead of being reinterpreted. `[a&b]` and `[a~b]` are accepted
+because a single `&` or `~` is a literal in both dialects.
+
+`[]]`, `[^]]`, `[a-]`, and `[-a]` follow Python's literal-bracket and
+literal-hyphen rules. `[\b]` is rejected even though Python treats it as a
+backspace, because milestone 1 does not implement class escapes beyond the
+numeric and fixed-width forms above.
+
+### Repetition
+
+Only greedy repetition is accepted. Bounded repetition is unrolled under a
+hard limit. A direct repetition of an assertion is rejected, matching
+Python's "nothing to repeat" error. `a{,2}` is rejected for now; Python 3.11
+and later accept it, and it is not part of the milestone 1 subset.
+
+`(?#...)` comments are not accepted by the AST parser and are outside the
+subset.
 
 ### Surrogates and UCS kinds
 
@@ -86,28 +133,22 @@ binding never passes them.
 
 ### Unicode version
 
-`regex-syntax` and CPython may ship different Unicode tables. Any difference
-that changes a match is treated as a divergence, documented here, and covered
-by a test. The engine does not silently pick one table.
+Milestone 1 has no Unicode property tables: `\p{...}` is rejected and
+explicit classes contain exactly the code points written in the pattern.
+There is therefore no Unicode-version dependence until milestone 2 adds
+Python class tables. Those tables must be generated for a documented CPython
+Unicode version, and any version-dependent divergence must be recorded here.
 
-## Flags
+## Deferred Python behavior
 
-- `i` — case-insensitive matching, resolved through HIR at compile time.
-- `m` — `^` and `$` match at line boundaries.
-- `s` — `.` matches newline.
-- `x` — whitespace and `#` comments ignored outside classes.
-- Scoped inline flags apply to their group and nest.
+These are intentionally not part of milestone 1 and are tracked for
+milestone 2 or later:
 
-LOCALE and DEBUG are rejected. ASCII and UNICODE flags are not part of the
-first milestones; the engine is Unicode-native for `str`. If they are added
-later, their scoped behavior is recorded here and in an ADR.
-
-## Known divergences to pin
-
-- `$` before a trailing newline: Python yes, Rust `regex` no. Python wins.
-- Capture values in unbounded loops: Python and Rust `regex` differ, for
-  example `^((x|y)*)*` reports `""` in Python and `"xyy"` in Rust. Milestone 2
-  targets Python and adds differential tests before accepting the behavior.
-- Possessive quantifiers are rejected, not compiled as nested repetition.
-- `\Z` and `\z`: the crate uses `\z`; the binding normalizes Python's `\Z`.
-- Empty-match iteration follows Python 3.7 and later, not older behavior.
+- `$` before a trailing newline.
+- Python `\w`, `\d`, `\s`, and word boundaries.
+- Flags `i`, `m`, `s`, `x`, including scoped flags.
+- Lazy repetition and named capture groups.
+- Capture values, including unbounded-loop behavior.
+- `a{,2}` and `(?#...)`.
+- `\N{...}` named character escapes.
+- ASCII/UNICODE flag semantics.

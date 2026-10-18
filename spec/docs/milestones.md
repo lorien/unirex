@@ -2,44 +2,52 @@
 
 Each milestone is a plan task in `spec/docs/plan.md`. A milestone is complete
 only when its acceptance criteria pass and its report is committed. The
-order is deliberate: prove the matching model first, then add captures, then
-optimize, then bind to Python.
+order is deliberate: prove the matching model first, then add Python classes
+and captures, then optimize, then bind to Python.
 
-## Milestone 1: UCS haystack and group-0 PikeVM
+## Milestone 1: UCS haystack, Python subset, group-0 PikeVM
 
-Build the standalone crate and the smallest engine that proves the model:
+Status: implemented.
 
 - `Ucs` haystack enum with `len`, `get`, `kind`, and character slicing.
-- Pattern parsing with `regex-syntax`.
-- HIR lowering to the Thompson instruction set for literals, classes,
-  concatenation, alternation, and repetition.
+- Python-dialect adapter over the `regex-syntax` AST: `\Z` normalization,
+  Python numeric-escape rules, strict subset validation, positioned errors.
+- Lowering to a Thompson program for literals, explicit classes,
+  concatenation, alternation, and greedy repetition.
 - PikeVM over code points, group 0 only: `is_match`, `find`, `find_iter`.
-- Differential tests against the Rust `regex` crate on UTF-8 text decoded to
-  UCS-1, UCS-2, and UCS-4 code units, restricted to supported syntax and
-  avoiding the documented divergences.
+- Python 3.7+ empty-match iteration.
+- Compile limits for pattern length, program size, repetition count, class
+  count, and class ranges.
+- Differential tests against CPython `re` for the accepted subset, UCS-1/2/4
+  tests, lone-surrogate tests, and adversarial-time tests.
 
-Acceptance: `cargo test` passes on all three kinds; the adversarial patterns
-`(a+)+b` and `(x+x+)+y` terminate within a fixed budget; no UTF-8 conversion
-exists in the matching path; the README does not claim linear time until the
-adversarial tests pass.
+Acceptance: all tests pass; the randomized Python differential harness
+reports no mismatches; `(a+)+b` and `(x+x+)+y` terminate within a fixed
+budget; no UTF-8 conversion exists in the matching path; the README states
+O(n * m) and does not claim more.
 
-## Milestone 2: Captures, anchors, and Python semantics
+## Milestone 2: Python classes, flags, captures
 
-- Capture slots, leftmost-first priority, greedy and lazy repetition.
-- Python-compatible zero-width iteration.
-- Anchors, word boundaries, and flags `i m s x`.
-- Differential tests against Python `re` on generated UCS-1, UCS-2, and UCS-4
-  strings, restricted to supported syntax.
-- Surrogate tests: lone surrogates match as units, not as encoded characters.
+- Generate Python-equivalent `\w`, `\d`, and `\s` ranges from CPython data for
+  a documented Unicode version; use the word table for `\b` and `\B`.
+- Add a Python `$` assertion: end of haystack or before a final newline.
+- Add capture slots, leftmost-first priority, lazy repetition, and named
+  groups.
+- Add flags `i`, `m`, `s`, and `x`, including scoped flags. Implement Python
+  `x` stripping as ASCII-only.
+- Add differential tests against Python `re` on generated UCS-1, UCS-2, and
+  UCS-4 strings, including Python capture values in unbounded loops.
+- Decide whether `a{,2}`, `(?#...)`, and `\N{...}` belong in the supported
+  dialect.
 
 Acceptance: Python differential suite passes on all three kinds, including
-empty matches, anchors, multiline, dot, alternation priority, unmatched
-groups, and zero-width stepping. Every remaining divergence is documented in
-`spec/docs/semantics.md`.
+empty matches, anchors, multiline, dot, alternation priority, captures,
+unmatched groups, and zero-width stepping. Every remaining divergence is
+documented in `spec/docs/semantics.md`.
 
 ## Milestone 3: Prefilter and first benchmark
 
-- Required-first-unit extraction from HIR literals and classes.
+- Required-first-unit extraction from the lowered program.
 - A false-negative-free UCS scan before entering the engine.
 - Benchmark the Telegram corpus in UCS-2 and a synthetic corpus when the real
   one is unavailable.

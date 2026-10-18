@@ -1,7 +1,7 @@
 # UCS-Native Engine
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (revised by ADR-0008)
 
 ## Context
 

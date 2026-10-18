@@ -34,10 +34,10 @@ creating `experiments/0001-*` or writing code. The proposal format is in
 
 ### Spec/ADR amendments
 
-- [open] Milestone 2 must pin the `\Z`/`\z` alias and the Python capture
-  behavior in unbounded loops with differential tests. If Python-compatible
-  capture values cannot be produced by the chosen priority scheme, record a
-  superseding ADR instead of silently diverging.
+- [acted] Milestone 2 must pin the `\Z`/`\z` alias and the Python capture
+  behavior in unbounded loops with differential tests. The alias is pinned in
+  milestone 1: `\Z` normalizes to `\z`. The capture-value part remains open
+  and is tracked in the milestone 1 report.
 - [open] Verify the Telegram corpus release URL and both SHA-256 values before
   milestone 3. The values came from the `rurex` provenance file and were not
   re-checked here.
@@ -47,11 +47,13 @@ creating `experiments/0001-*` or writing code. The proposal format is in
 
 ### Future-task notes
 
-- [open] Milestone 1 must not claim linear-time behavior in the README until
-  the adversarial tests for `(a+)+b` and `(x+x+)+y` pass.
-- [open] The milestone 1 differential corpus must avoid `$` and the
+- [acted] Milestone 1 must not claim linear-time behavior in the README until
+  the adversarial tests for `(a+)+b` and `(x+x+)+y` pass. The tests pass and
+  the README states O(n * m).
+- [acted] The milestone 1 differential corpus must avoid `$` and the
   capture-in-loop divergence, because the oracle is the Rust `regex` crate
-  while the final target is Python `re`.
+  while the final target is Python `re`. `$` is rejected in milestone 1, and
+  the accepted subset is compared against CPython `re`.
 - [open] Milestone 5 must validate PEP 393 layout detection on CPython 3.10
   through 3.15, including free-threaded 3.14t, before trusting the fast path.
 

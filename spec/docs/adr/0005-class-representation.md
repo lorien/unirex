@@ -1,7 +1,7 @@
 # Class Representation
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (HIR mechanism revised by ADR-0008)
 
 ## Context
 

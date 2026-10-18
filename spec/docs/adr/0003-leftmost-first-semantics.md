@@ -1,7 +1,7 @@
 # Leftmost-First Semantics
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (milestone 1 oracle and class source revised by ADR-0008)
 
 ## Context
 

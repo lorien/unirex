@@ -26,8 +26,9 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
   — `AGENTS.md` as a pointer, `spec/docs/` as the source of truth, and the
   plan, report, and ADR lifecycle.
 - [adr/0002-ucs-native-engine.md](adr/0002-ucs-native-engine.md) — a
-  standalone UCS-native Thompson NFA and PikeVM over `regex-syntax` HIR,
-  with no UTF-8 conversion in the matching path.
+  standalone UCS-native Thompson NFA and PikeVM over a `regex-syntax` parse,
+  with no UTF-8 conversion in the matching path (parser choice revised by
+  ADR-0008).
 - [adr/0003-leftmost-first-semantics.md](adr/0003-leftmost-first-semantics.md)
   — Python-compatible leftmost-first matching, including empty-match
   iteration and `$` before a trailing newline.
@@ -41,3 +42,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0007-cpython-ucs-contract.md](adr/0007-cpython-ucs-contract.md) —
   UCS-2 units as code points including lone surrogates, validated PEP 393
   layout detection, and results built from the UCS buffer.
+- [adr/0008-python-dialect-adapter.md](adr/0008-python-dialect-adapter.md) —
+  parse the `regex-syntax` AST, validate a strict Python subset, lower it in
+  this crate, and reject Rust-only syntax instead of using Rust semantics.

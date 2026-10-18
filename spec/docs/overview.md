@@ -45,12 +45,18 @@ In scope:
 - Native UCS-1, UCS-2, and UCS-4 haystacks; no UTF-8 conversion in the
   matching path.
 - Literals, `.`, character classes, alternation, greedy and lazy `* + ? {n,m}`,
-  anchors `^ $ \A \z \b \B`, capture groups, flags `i m s x`, and the Unicode
-  classes exposed by `regex-syntax` HIR.
+  anchors `^ $ \A \z \b \B`, capture groups, flags `i m s x`, and Python's
+  Unicode class semantics, which milestone 1 does not yet implement.
 - Bounded compile time and memory, including a capped lazy DFA if one is
   added.
 - A first-unit prefilter and, if the benchmark justifies it, a lazy DFA.
 - A PyO3 binding as a later milestone, not a first milestone.
+
+Milestone 1 accepts only the strict subset documented in
+`spec/docs/semantics.md`: literals, `.`, explicit classes, alternation,
+greedy repetition, `^`, `\A`, `\Z`, `\z`, grouping, and fixed-width or
+Python octal escapes. `$`, `\w`, `\b`, flags, lazy repetition, and named
+groups are rejected until milestone 2.
 
 Out of scope by design, rejected at compile time: backreferences, lookaround,
 atomic groups, possessive quantifiers, conditionals, and recursion.
@@ -74,25 +80,26 @@ general-purpose package. It is an experiment that may later contribute a
 
 ## Repository layout
 
-The implementation layout is created by milestone 1. The intended layout is:
+Milestone 1 is implemented. The current layout is:
 
 - `AGENTS.md` — pointer for coding agents.
+- `README.md` — supported syntax, rejected syntax, design summary, commands.
 - `spec/docs/` — current design, conventions, semantics, testing, benchmarks,
   milestones, and the open-task list.
 - `spec/skills/` — workflow files.
 - `spec/report/` — session reports.
-- `Cargo.toml`, `rust-toolchain.toml` — crate and toolchain.
-- `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`.
+- `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` — crate and toolchain.
+- `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, and the
+  `Matches` iterator.
 - `src/ucs.rs` — the three-kind haystack view.
-- `src/compile.rs` — HIR lowering into the instruction program.
-- `src/classes.rs` — class set and per-kind membership structures.
-- `src/pikevm.rs` — linear-time simulation, group 0 first, captures later.
-- `src/prefilter.rs` — required-first-unit extraction and scanning.
-- `src/dfa.rs` — optional lazy DFA, added only after the benchmark.
+- `src/compile.rs` — Python-dialect adapter, AST validation, and lowering.
+- `src/pikevm.rs` — the linear-time group-0 simulation.
 - `src/error.rs` — compile and usage errors.
-- `tests/` — unit, differential, adversarial, and fuzz tests.
-- `benches/` — benchmark harness and the Telegram corpus reader.
+- `tests/m1.rs` — accepted subset, Python spans, UCS kinds, adversarial
+  timing, and the Rust `regex` common-subset differential.
+- `examples/oracle.rs` — TSV oracle used by the Python differential harness.
+- `tools/python_diff.py` — randomized comparison against CPython `re`.
 - `var/` — gitignored corpus cache and local artifacts.
 
-At present no implementation exists; the documents describe the intended
-design and `spec/docs/plan.md` lists the milestones.
+Later milestones add `src/prefilter.rs`, `src/dfa.rs`, the Telegram benchmark
+harness, and the PyO3 binding. The current plan is in `spec/docs/plan.md`.

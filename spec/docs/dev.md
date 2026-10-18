@@ -5,13 +5,14 @@
 - Rust stable, edition 2024, `rust-version = "1.85"` or newer. The installed
   toolchain is selected by `rust-toolchain.toml`.
 - Cargo.
-- No Python is required for milestones 1 through 4. Python, PyO3, and maturin
-  are needed only for milestone 5.
+- Python 3 is needed only for the randomized differential harness, not for
+  building or using the crate.
+- Python, PyO3, and maturin are needed only for milestone 5.
 
 ## Dependencies
 
-- `regex-syntax` 0.8 for parsing and HIR.
-- `memchr` 2.8 for the prefilter.
+- `regex-syntax` 0.8 for AST parsing.
+- `regex` 1.13 as a dev-dependency for the common-subset differential tests.
 - No Python dependency in the core crate.
 
 Add a dependency only with a reason recorded in the commit message or an ADR.
@@ -25,13 +26,10 @@ Prefer the standard library for anything small.
     cargo clippy --all-targets -- -D warnings
     cargo fmt
     cargo fmt --check
+    python3 tools/python_diff.py --patterns 1000
 
-Run the benchmark with:
-
-    cargo run --release --bin bench -- --corpus var/bench-data/tg-1m.json.gz
-
-The final benchmark entry point is defined by milestone 3. Until then the
-command above is the intended shape, not a shipped interface.
+The Python harness builds and runs `examples/oracle.rs`, then compares
+`find_iter` spans with CPython `re`. It accepts `--patterns N` and `--seed S`.
 
 ## Repository layout
 

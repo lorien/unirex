@@ -4,40 +4,29 @@ Open-task list. Format, statuses, and lifecycle:
 `spec/skills/task_tracking.md`. Priorities: higher number = more important;
 `-1` = deferred.
 
-## Milestone 1: UCS haystack and group-0 PikeVM
-
-Status: new
-Priority: 3
-
-Build the standalone crate: `Ucs` haystack enum, `regex-syntax` parsing, HIR
-lowering to the Thompson instruction set, and a PikeVM for `is_match`, `find`,
-and `find_iter` with group 0 only. Add differential tests against the Rust
-`regex` crate on decoded UCS-1/2/4 text and adversarial-time tests. Acceptance
-criteria and the full scope are in `spec/docs/milestones.md`.
-
-References: ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0007
-
 ## Set up continuous integration
 
 Status: new
 Priority: 3
 
 Add CI that runs `cargo fmt --check`, `cargo clippy --all-targets -- -D
-warnings`, and `cargo test`, plus a docs check for local links and referenced
-paths. Pin the toolchain to `rust-toolchain.toml` and keep the CI command
-identical to the local command in `spec/docs/testing.md`.
+warnings`, `cargo test`, and `python3 tools/python_diff.py`, plus a docs check
+for local links and referenced paths. Pin the toolchain to
+`rust-toolchain.toml` and keep the CI commands identical to the local
+commands in `spec/docs/testing.md`.
 
-## Milestone 2: Captures, anchors, and Python semantics
+## Milestone 2: Python classes, flags, captures
 
 Status: new
 Priority: 2
 
-Add capture slots, leftmost-first priority, lazy repetition, Python-compatible
-zero-width iteration, anchors, word boundaries, and flags `i m s x`.
-Differential tests move to Python `re` on generated UCS-1/2/4 strings.
-Acceptance criteria are in `spec/docs/milestones.md`.
+Add Python-equivalent `\w`, `\d`, and `\s` tables generated from CPython data,
+Python word boundaries `\b` and `\B`, the Python `$` assertion, capture slots,
+lazy repetition, named groups, and flags `i m s x`. Switch the full
+differential suite to Python `re` on generated UCS-1/2/4 strings. Acceptance
+criteria are in `spec/docs/milestones.md`.
 
-References: ADR-0003, ADR-0007
+References: ADR-0003, ADR-0007, ADR-0008
 
 ## Milestone 3: Prefilter and first benchmark
 
