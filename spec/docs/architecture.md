@@ -2,10 +2,10 @@
 
 ## Current state
 
-Milestones 1, 3, and 4 are implemented: a standalone crate with a strict
+Milestones 1, 3, 4, and 5 are implemented: a standalone crate with a strict
 Python-dialect subset, a Thompson program, a group-0 PikeVM, a first-unit
-prefilter, and a lazy DFA over UCS-1, UCS-2, and UCS-4. Captures, the remaining
-Python classes and flags, and the Python binding remain.
+prefilter, a lazy DFA over UCS-1, UCS-2, and UCS-4, and a PyO3 binding.
+Captures and the remaining Python classes and flags remain.
 
 ## Compilation pipeline
 
@@ -196,25 +196,37 @@ same-thread baseline. See `benchmarks.md`.
 
 ## Python binding
 
-Milestone 5 uses PyO3 and maturin. The binding:
+Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
+`exp_rurex.compile(pattern)` and `exp_rurex.Regex` with `findall`, `find`, and
+`is_match`.
 
-- Detects and validates the PEP 393 layout of the running interpreter instead
-  of hard-coding offsets; the `rurex` layout detector is the reference design.
-- Obtains UCS kind, length, and data from a Python `str` only after
-  validation. On failure it falls back to CPython's UTF-8 API or the existing
-  `rurex` path.
-- Builds result strings from the original UCS buffer, using
-  `PyUnicode_Substring` where available and `PyUnicode_FromKindAndData` as the
-  documented fallback.
-- Matches under the GIL for short strings. For large haystacks it releases the
-  GIL around the scan while keeping the `str` object alive, and never touches
-  Python objects inside the detached region.
-- Supports CPython 3.10 through 3.15, both GIL and free-threaded 3.14t.
+- UCS access uses CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
+  `PyUnicode_GET_LENGTH`, not private PEP 393 offsets. `PyUnicode_READY` is
+  called first for pre-3.12 interpreters.
+- The binding constructs borrowed `Ucs` slices while the `Bound<PyString>` is
+  alive. Strings are immutable; no Python object is touched in a detached scan.
+- Result strings come from `PyUnicode_Substring` using match code-point
+  offsets. There is no UTF-8 encode or decode in the result path.
+- Each compiled `Regex` owns a scratch pool. A call takes a scratch, scans
+  without holding the pool lock, and returns it.
+- Short strings match under the GIL. Haystacks of at least 4,096 code units
+  release the GIL around the scan and build result strings afterward.
+- The extension is non-abi3 because the UCS data accessors are outside the
+  limited API. Version-specific wheels are expected.
+- Only group 0 is exposed. Patterns with capture groups return the whole match,
+  not `re.findall`'s group tuples.
+
+End-to-end benchmark, full corpus, cold fresh process, one thread, GIL:
+`exp_rurex` was 0.596 s to 0.604 s per run, with a median of 0.598 s over five
+runs. CPython `re` was 0.490 s to 0.648 s, median 0.501 s. The binding works,
+but the engine is about 1.2 times slower than CPython `re`. See
+`benchmarks.md`.
 
 ## Memory and safety
 
 - The core engine uses safe slices. The only `unsafe` is constructing slices
-  from validated CPython pointers, with a documented safety argument.
+  through CPython's documented UCS accessors, with a safety argument tied to
+  the live `Bound<PyString>` and string immutability.
 - Compile limits bound pattern length, program size, repetition count, class
   count, and total class ranges.
 - The DFA cache has a hard state cap. The PikeVM thread lists and visited set
@@ -227,8 +239,12 @@ Milestone 5 uses PyO3 and maturin. The binding:
     src/ucs.rs        Ucs enum, kind, unit access, slicing
     src/compile.rs    Python-dialect adapter, AST validation, lowering
     src/pikevm.rs     Scratch, thread lists, epsilon closure, matching
+    src/dfa.rs        lazy DFA and PikeVM fallback
+    src/python.rs     PyO3 module and CPython UCS access
     src/error.rs      error types and displays
-    examples/bench.rs  self-contained Telegram benchmark
+    examples/bench.rs  self-contained Telegram engine-only benchmark
     examples/oracle.rs TSV oracle used by the Python differential harness
+    tools/bench_python.py  end-to-end Python benchmark
+    tools/test_python_binding.py  binding smoke test against re
     tools/python_diff.py  randomized comparison against CPython re
     tests/m1.rs       accepted subset, Python spans, UCS kinds, adversarial

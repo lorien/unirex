@@ -80,15 +80,23 @@ the differential and assertion suites; the DFA is faster on the full corpus.
 
 ## Milestone 5: PyO3 binding and end-to-end benchmark
 
-Status: next.
+Status: implemented on CPython 3.13 GIL. Other versions and free-threaded
+builds are unverified.
 
 - PyO3 and maturin module for the current supported subset.
-- Validated PEP 393 layout detection; safe slices for the core.
-- Result strings built from the UCS buffer.
-- GIL release for large haystacks.
-- End-to-end benchmark against the current `rurex` str path.
+- UCS access through CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
+  `PyUnicode_GET_LENGTH`; no private offsets.
+- Result strings from `PyUnicode_Substring`; no UTF-8 conversion.
+- Scratch pooling and GIL release for haystacks of at least 4,096 units.
+- End-to-end benchmark against CPython `re`.
 
-Acceptance: works on CPython 3.10 through 3.15, GIL and free-threaded 3.14t;
-no unvalidated field is read; end-to-end time beats the 0.75 s baseline and
-ideally approaches 0.45 s. Milestone 2 compatibility work can follow or
-interleave; the Telegram pattern does not need it.
+Results, cold fresh process, one thread, GIL, full corpus:
+
+- `exp_rurex`: median 0.598 s, minimum 0.596 s.
+- CPython `re`: median 0.501 s, minimum 0.490 s.
+
+The binding works and counts are correct, but it is about 1.2 times slower than
+CPython `re`.
+Engine optimization is the next step; the DFA is still about twice as slow as
+Rust `regex` bytes at one thread. The 0.75 s baseline is met only in the best
+runs, not reliably. The ideal 0.45 s target is not met.

@@ -7,17 +7,18 @@
 - Cargo.
 - Network access for the first Telegram benchmark download, unless the corpus
   is supplied with `--corpus` or `RUREX_TG_DATA`.
-- Python 3 is needed only for the randomized differential harness, not for
-  building, using, or benchmarking the crate.
-- Python, PyO3, and maturin are needed only for milestone 5.
+- Python 3 is needed for the randomized differential harness and the Python
+  binding/benchmark.
+- PyO3 and maturin are needed for the Python binding.
 
 ## Dependencies
 
 - Core: `regex-syntax` 0.8 for AST parsing, `memchr` and `bytemuck` for the
   first-unit prefilter.
+- Optional: `pyo3` behind the `python` and `extension-module` features.
 - Dev-only: `regex` for differential and benchmark baselines; `serde`,
   `serde_json`, `flate2`, `ureq`, and `sha2` for the benchmark.
-- No Python dependency in the core crate.
+- No Python dependency in the core crate without the Python feature.
 
 Add a dependency only with a reason recorded in the commit message or an ADR.
 Prefer the standard library for anything small.
@@ -40,6 +41,20 @@ Benchmark commands:
     cargo run --release --example bench -- --mode bytes --repeat 3
     cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
     cargo run --release --example bench -- --mode str --repeat 3 --threads 4
+
+Python binding:
+
+    python3 -m venv .venv
+    . .venv/bin/activate
+    pip install maturin
+    maturin develop --release
+    python3 tools/test_python_binding.py
+    python3 tools/bench_python.py --engine exp_rurex --repeat 1
+
+For a Cargo-only build, run `cargo build --release --features extension-module`
+and put `target/release/libexp_rurex.so` on `PYTHONPATH` as
+`exp_rurex.so`. The `pyproject.toml` uses maturin with the `extension-module`
+feature and is non-abi3.
 
 The benchmark downloads and SHA-256 verifies the corpus into
 `var/bench-data/tg-1m.json.gz` on first use. Use `--corpus` or

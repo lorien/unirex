@@ -61,6 +61,18 @@ at decision time. The format is defined in
   the PikeVM. Every DFA path change needs differential tests against the
   PikeVM and CPython.
 
+## Python binding
+
+- Use CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
+  `PyUnicode_GET_LENGTH`; do not hard-code PEP 393 offsets.
+- Borrow UCS slices only while the `Bound<PyString>` is alive. Never touch a
+  Python object inside a detached region.
+- Build results with `PyUnicode_Substring`; do not encode to UTF-8.
+- The binding exposes group 0 only until capture slots land. Do not claim
+  `re.findall` group-tuple compatibility.
+- Test UCS-1, UCS-2, UCS-4, lone surrogates, empty matches, and the GIL-detach
+  threshold when the binding changes.
+
 ## Benchmarks
 
 - A performance claim needs a reproducible benchmark and a recorded baseline.

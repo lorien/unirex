@@ -68,8 +68,10 @@ Raw JSON is under `var/bench-results/` and is intentionally not committed.
   not implement one. Either add it or remove the claim.
 - [open] The full 1M-post run is too heavy for ordinary CI. Run the benchmark
   self-test in CI and the full corpus manually or nightly.
-- [open] At milestone 5, compare `--threads` results with GIL and
-  free-threaded CPython. The current harness has no Python overhead.
+- [acted] At milestone 5, compare `--threads` results with GIL and
+  free-threaded CPython. GIL 1-thread end-to-end was measured; GIL 4-thread
+  runs were not meaningfully faster. Free-threaded verification remains a
+  separate open task.
 
 ### Future-task notes
 

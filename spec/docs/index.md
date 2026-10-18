@@ -55,3 +55,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0011-dfa-match-tracking.md](adr/0011-dfa-match-tracking.md) — lazy DFA
   state representation, leftmost-first match pruning, pending end assertions,
   bounded cache, and PikeVM fallback.
+- [adr/0012-cpython-ucs-access.md](adr/0012-cpython-ucs-access.md) — the
+  binding uses CPython's UCS accessors and `PyUnicode_Substring`, not private
+  PEP 393 offsets or UTF-8 conversion.

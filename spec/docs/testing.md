@@ -2,10 +2,11 @@
 
 ## Current state
 
-Milestones 1, 3, and 4 are implemented. The suite covers the strict Python
+Milestones 1, 3, 4, and 5 are implemented. The suite covers the strict Python
 subset, the Python 3.7+ empty-match rule, all three UCS kinds, lone
 surrogates, the first-unit prefilter, the lazy DFA and its PikeVM fallback,
-adversarial patterns, and a randomized comparison against CPython `re`.
+the PyO3 binding, adversarial patterns, and a randomized comparison against
+CPython `re`.
 
 ## Test layers
 
@@ -32,8 +33,15 @@ adversarial patterns, and a randomized comparison against CPython `re`.
    and Rust agree; this is not the semantic authority.
 7. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
    finish within a fixed budget.
-8. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
-   flags, captures, and generated UCS-1/2/4 differential suites.
+8. **Python binding smoke test.** `tools/test_python_binding.py` compares
+   `findall`, `find`, and `is_match` with CPython `re` on UCS-1, UCS-2, UCS-4,
+   and lone-surrogate inputs. Capture groups are group 0 only; the smoke test
+   uses group-free patterns for `findall`.
+9. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
+   untimed, compiles once, and times `findall` per post. It verifies the full
+   mention counts. The full corpus is not part of ordinary CI.
+10. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+    flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands
 
@@ -45,6 +53,10 @@ Run from the repository root:
     cargo test --release
     python3 tools/python_diff.py --patterns 1000
     cargo run --release --example bench -- --self-test
+    cargo check --features python
+    cargo build --release --features extension-module
+    PYTHONPATH=var/py python3 tools/test_python_binding.py
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --limit 100000 --repeat 1
 
 Timing assertions use release builds. A debug-build timing test is not
 meaningful and must not gate CI. The Python harness needs a `python3` with
@@ -70,19 +82,17 @@ Before every commit:
 5. **No stray files.** `git status --short` shows only intended changes.
    Corpus data, build output, local artifacts, and temporary examples stay
    under `var/` or in `.env`, both gitignored.
-6. **Benchmark portability.** The benchmark must not reference a path outside
-   this repository. Check with:
-
-       rg -n "/web/|/home/" --glob '!target/**' .
-
-   Run `--self-test` after a fresh checkout or a copy outside `/web`. A
-   benchmark result is valid only if its mention count matches the independent
-   naive count; the full corpus must report 334,136 mentions in 186,226 posts.
+6. **Benchmark portability.** The benchmark must not reference an absolute
+   host path or another checkout. Run `--self-test` after a fresh checkout or
+   a copy outside the original source tree. A benchmark result is valid only
+   if its mention count matches the independent naive count; the full corpus
+   must report 334,136 mentions in 186,226 posts.
 
 ## Continuous integration
 
-CI runs the same format, lint, test, Python differential, and benchmark
-self-test commands on every push. It does not run the full 1M-post benchmark.
+CI runs the same format, lint, test, Python differential, benchmark self-test,
+and Python binding smoke test commands on every push. It does not run the full
+1M-post end-to-end benchmark.
 Tool versions are pinned in the workflow to the versions in
 `rust-toolchain.toml`. A docs check verifies local links and referenced paths
 so documentation cannot silently drift.

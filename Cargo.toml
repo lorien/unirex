@@ -6,10 +6,19 @@ rust-version = "1.85"
 license = "MIT"
 description = "Experimental linear-time regex engine over CPython UCS storage"
 
+[lib]
+name = "exp_rurex"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 regex-syntax = "0.8"
 memchr = "2.8"
 bytemuck = "1"
+pyo3 = { version = "0.30", optional = true }
+
+[features]
+python = ["dep:pyo3"]
+extension-module = ["python", "pyo3/extension-module"]
 
 [dev-dependencies]
 regex = "1.13"

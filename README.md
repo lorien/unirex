@@ -4,10 +4,10 @@ Experimental linear-time regular-expression engine that matches directly
 against CPython's PEP 393 UCS storage: UCS-1, UCS-2, and UCS-4, with no UTF-8
 conversion in the matching path.
 
-Milestones 1, 3, and 4 are implemented: a standalone Rust crate with a
-strict Python-compatible syntax subset, a first-unit prefilter, and a lazy
-DFA. Milestone 2 compatibility work and the milestone 5 Python binding
-remain. It is not a full `re` replacement.
+Milestones 1, 3, 4, and 5 are implemented: a standalone Rust crate with a
+strict Python-compatible syntax subset, a first-unit prefilter, a lazy DFA,
+and a PyO3 binding. Milestone 2 compatibility work remains. It is not a full
+`re` replacement.
 
 ## Supported syntax
 
@@ -81,6 +81,8 @@ cargo test --release
 python3 tools/python_diff.py --patterns 1000
 cargo run --release --example bench -- --self-test
 cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
+PYTHONPATH=var/py python3 tools/test_python_binding.py
+PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --repeat 1
 ```
 
 The Python differential harness generates random patterns from the supported
@@ -114,11 +116,48 @@ Four threads:
 
 The DFA is 3.5x faster than the prefiltered PikeVM. It is about 2.1x slower
 than the bytes baseline at one thread and 1.8x slower at four threads. It does
-not beat the same-thread baseline. The next step is the Python binding and the
-end-to-end comparison.
+not beat the same-thread baseline.
+
+## Python binding
+
+Build the extension with maturin:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+pip install maturin
+maturin develop --release
+```
+
+Alternatively, build with Cargo and place the shared object on `PYTHONPATH`:
+
+```sh
+cargo build --release --features extension-module
+mkdir -p var/py
+cp target/release/libexp_rurex.so var/py/exp_rurex.so
+PYTHONPATH=var/py python3 tools/test_python_binding.py
+```
+
+Usage:
+
+```python
+import exp_rurex
+
+rx = exp_rurex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
+rx.findall("hello @alice123")
+rx.find("hello @alice123")
+rx.is_match("hello @alice123")
+```
+
+End-to-end, cold fresh process, one thread, GIL, full corpus:
+
+- `exp_rurex`: median 0.598 s, minimum 0.596 s.
+- CPython `re`: median 0.501 s, minimum 0.490 s.
+
+The binding is correct, but it is about 1.2 times slower than CPython `re`.
+The DFA engine is the limiting factor; the next task is optimization.
 
 ## Not yet implemented
 
 Capture values, Python `\w`/`\d`/`\s` classes, Python word boundaries, `$`,
-flags, lazy repetition, and the PyO3 binding. See
-`spec/docs/milestones.md`.
+flags, and lazy repetition. See `spec/docs/milestones.md`.

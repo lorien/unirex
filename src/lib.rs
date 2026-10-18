@@ -9,6 +9,8 @@ mod compile;
 mod dfa;
 mod error;
 mod pikevm;
+#[cfg(feature = "python")]
+mod python;
 mod ucs;
 
 pub use error::Error;

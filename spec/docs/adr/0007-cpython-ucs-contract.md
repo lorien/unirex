@@ -1,7 +1,7 @@
 # CPython UCS Contract
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (UCS access revised by ADR-0012)
 
 ## Context
 

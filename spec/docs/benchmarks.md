@@ -11,8 +11,9 @@ Corpus resolution:
 3. Download from the public release URL, verify SHA-256, then cache it.
 4. `--no-download` or a failed download prints the URL and checksum and exits.
 
-The corpus URL is the public `rurex` release asset. That is an external data
-source, not a repository dependency.
+The corpus URL is a public release asset. The URL lives under the `rurex`
+project only as data provenance; this benchmark does not import or run the
+`rurex` engine.
 
 ## Modes
 
@@ -23,8 +24,8 @@ source, not a repository dependency.
 
 ## Protocol
 
-- Load, pack, and compile outside the timed window, matching the `rurex`
-  benchmark protocol.
+- Load, pack, and compile outside the timed window, using a cold one-pass
+  protocol.
 - Each post is scanned exactly once per run, counting matches with
   `find_iter_with` and `black_box`.
 - The first run is cold; `--repeat N` adds warm runs. Report first, median,
@@ -78,17 +79,43 @@ Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
 UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing every
 post to UCS-2 would misrepresent about 46 percent of the corpus.
 
-The single-thread engine-only result is 0.360 s. The end-to-end target is
-0.75 s, so the remaining question is Python binding and result construction
-overhead. That is milestone 5. Engine-only numbers must not be compared
-directly with `rurex` end-to-end time.
+The single-thread engine-only result is 0.360 s. The end-to-end benchmark now
+exists; the remaining gap is engine optimization, not binding overhead.
+Engine-only numbers must not be compared directly with another engine's
+end-to-end time.
 
 Patterns without a safe first-unit set still use the PikeVM. The DFA is an
 optimization, not a change in the supported language or correctness.
 
-Historical `rurex` and CPython numbers remain external context; they were not
-produced by this harness on this machine and are not used as a pass/fail
-gate.
+Numbers from other engines or machines are external context and are not part
+of this benchmark.
+
+## End-to-end Python benchmark
+
+`tools/bench_python.py` measures the same corpus through the Python binding.
+It loads and compiles outside the timed window, then each worker scans its
+slice once after a barrier. It resolves the corpus the same way as the Rust
+harness and verifies 334,136 mentions in 186,226 posts.
+
+Use a fresh process per point for the cold protocol. The following are five
+fresh-process runs from this repository's own corpus cache, pinned to one CPU,
+one thread, GIL build, full corpus:
+
+- `exp_rurex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
+  minimum 0.596 s.
+- CPython `re`: 0.490 s, 0.491 s, 0.501 s, 0.510 s, 0.648 s. Median 0.501 s,
+  minimum 0.490 s.
+
+The binding works and produces the correct mention counts, but it is slower
+than CPython `re`: about 1.19 times slower at the median and 1.22 times slower
+at the minimum.
+
+The engine-only gap explains this: the DFA is 0.360 s versus 0.169 s for Rust
+`regex` bytes at one thread. The binding overhead is not the main problem.
+Closing the end-to-end gap requires engine optimization.
+
+GIL 4-thread runs were not meaningfully faster; free-threaded CPython has not
+been tested.
 
 ## Commands
 
@@ -98,6 +125,8 @@ gate.
     cargo run --release --example bench -- --mode bytes --repeat 3
     cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
     cargo run --release --example bench -- --mode str --repeat 3 --threads 4
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --repeat 1
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine re --repeat 1
 
 Add `--json var/bench-results/<name>.json` to keep raw results. Never commit
 the corpus or raw result files.

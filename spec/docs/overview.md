@@ -5,8 +5,8 @@
 `exp_rurex` is an experimental, linear-time regular-expression engine that
 matches directly against CPython's PEP 393 string storage: UCS-1, UCS-2, and
 UCS-4. It starts as a standalone Rust crate with no Python dependency, so the
-matching model can be tested on plain slices. A PyO3 binding comes later, and
-the long-term goal is an alternative `str` path for `rurex`.
+matching model can be tested on plain slices. A PyO3 binding exposes the same
+engine to Python; the long-term goal is an alternative `str` path for `rurex`.
 
 The engine exists to answer one question: can UCS-native matching remove the
 UTF-8 transcode and still be correct and fast enough to beat the current
@@ -49,7 +49,7 @@ In scope:
   Unicode class semantics, which are not yet implemented (milestone 2).
 - Bounded compile time and memory, including a capped lazy DFA.
 - A first-unit prefilter and a lazy DFA, both implemented.
-- A PyO3 binding as a later milestone, not a first milestone.
+- A PyO3 binding, implemented; the core remains usable without Python.
 
 The engine accepts the strict subset documented in `spec/docs/semantics.md`:
 literals, `.`, explicit classes, alternation, greedy repetition, `^`, `\A`,
@@ -78,7 +78,7 @@ general-purpose package. It is an experiment that may later contribute a
 
 ## Repository layout
 
-Milestones 1, 3, and 4 are implemented. The current layout is:
+Milestones 1, 3, 4, and 5 are implemented. The current layout is:
 
 - `AGENTS.md` — pointer for coding agents.
 - `README.md` — supported syntax, rejected syntax, design summary, commands.
@@ -86,23 +86,27 @@ Milestones 1, 3, and 4 are implemented. The current layout is:
   milestones, and the open-task list.
 - `spec/skills/` — workflow files.
 - `spec/report/` — session reports.
-- `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` — crate and toolchain.
+- `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `pyproject.toml` — crate,
+  toolchain, and maturin metadata.
 - `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, `Scratch`, and
   the `Matches` and `MatchesWith` iterators.
 - `src/ucs.rs` — the three-kind haystack view and the unit search trait.
 - `src/compile.rs` — Python-dialect adapter, AST validation, and lowering.
 - `src/pikevm.rs` — Scratch, the group-0 PikeVM, and DFA dispatch.
 - `src/dfa.rs` — lazy DFA over code-point equivalence classes.
+- `src/python.rs` — PyO3 module and CPython UCS access.
 - `src/error.rs` — compile and usage errors.
 - `tests/m1.rs` — accepted subset, Python spans, UCS kinds, adversarial
   timing, scratch reuse, and the Rust `regex` common-subset differential.
 - `examples/bench.rs` — self-contained Telegram engine-only benchmark.
 - `examples/oracle.rs` — TSV oracle used by the Python differential harness.
 - `tools/python_diff.py` — randomized comparison against CPython `re`.
+- `tools/bench_python.py` — end-to-end Python benchmark.
+- `tools/test_python_binding.py` — binding smoke test against `re`.
 - `var/` — gitignored corpus cache, raw benchmark results, and local
   artifacts.
 
-The benchmark harness, first-unit prefilter, and lazy DFA exist. Remaining
-work is Python class/flag/capture compatibility (milestone 2) and the PyO3
-binding with the end-to-end benchmark (milestone 5). The current plan is in
+The benchmark harness, first-unit prefilter, lazy DFA, and PyO3 binding exist.
+Remaining work is Python class/flag/capture compatibility (milestone 2) and
+engine optimization to close the end-to-end gap. The current plan is in
 `spec/docs/plan.md`.
