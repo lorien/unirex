@@ -13,7 +13,7 @@ Ad-hoc work requested by the owner: make the benchmark portable and run it.
     `var/bench-data/tg-1m.json.gz` cache, or the public release URL.
   - Streaming gzip and JSONL parsing with `flate2` and `serde_json`.
   - Narrowest CPython kind per post, with flat UCS-1/2/4 buffers.
-  - Modes `ucs`, `bytes`, `str`, and `at`; `--threads`, `--limit`,
+  - Modes `ucs`, `bytes`, and `str`; `--threads`, `--limit`,
     `--repeat`, `--json`, and `--self-test`.
   - Untimed loading and compilation; cold first run plus repeated runs;
     median and minimum; `black_box`.
@@ -36,15 +36,15 @@ reported 334,136 mentions in 186,226 posts.
 - `ucs`, 4 threads: median 1.796 s.
 - `bytes` (Rust `regex`), 1 thread: median 0.151 s, first 0.120 s.
 - `str` (Rust `regex`), 1 thread: median 0.188 s.
-- `at` (`memchr` lower bound), 1 thread: median 0.0735 s, 346,251 marks.
 
 Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, 458,415 UCS-4
 posts. A forced UCS-2 benchmark would misrepresent about 46 percent of the
 corpus.
 
 Conclusion: the milestone 1 PikeVM is about 36 times slower than the mature
-Rust `regex` bytes engine single-threaded, and about 12 times slower with four
-threads. A first-unit prefilter skips most posts (77 percent contain no `@`),
+Rust `regex` bytes engine single-threaded. The four-thread PikeVM was 1.796 s;
+no same-thread bytes baseline was measured in that session. A first-unit
+prefilter skips most posts (77 percent contain no `@`),
 but the remaining posts would still cost roughly 1.2 s at the measured
 per-post rate. The prefilter is necessary but probably not sufficient; the
 lazy DFA is likely required. Milestone 3 was raised to priority 4 to measure
@@ -63,7 +63,7 @@ Raw JSON is under `var/bench-results/` and is intentionally not committed.
   priority 4.
 - [acted] Add a benchmark mode that scans only posts containing `@`. The
   prefilter now skips directly to `@` candidates inside each post, which is
-  stronger than a post-level mode; the `at` mode remains the lower bound.
+  stronger than a post-level mode.
 - [open] The docs mention a synthetic corpus fallback, but the harness does
   not implement one. Either add it or remove the claim.
 - [open] The full 1M-post run is too heavy for ordinary CI. Run the benchmark
@@ -78,8 +78,9 @@ Raw JSON is under `var/bench-results/` and is intentionally not committed.
 - [open] Add an optional external-baseline ingestion path for separately
   produced `rurex` and CPython numbers. The required benchmark must remain
   self-contained.
-- [open] Keep the `bytes`, `str`, and `at` baselines in sync with the engine
-  modes whenever the benchmark protocol changes.
+- [acted] Keep the benchmark baselines in sync with the engine modes. The
+  `at`/`memchr` diagnostic was later removed because it was not a regex
+  engine or a baseline.
 
 ### Tooling/process
 

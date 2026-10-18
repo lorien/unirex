@@ -2,9 +2,10 @@
 
 ## Current state
 
-Milestone 1 is implemented. The suite covers the strict Python subset, the
-Python 3.7+ empty-match rule, all three UCS kinds, lone surrogates, adversarial
-patterns, and a randomized comparison against CPython `re`.
+Milestones 1, 3, and 4 are implemented. The suite covers the strict Python
+subset, the Python 3.7+ empty-match rule, all three UCS kinds, lone
+surrogates, the first-unit prefilter, the lazy DFA and its PikeVM fallback,
+adversarial patterns, and a randomized comparison against CPython `re`.
 
 ## Test layers
 

@@ -4,9 +4,10 @@ Experimental linear-time regular-expression engine that matches directly
 against CPython's PEP 393 UCS storage: UCS-1, UCS-2, and UCS-4, with no UTF-8
 conversion in the matching path.
 
-This repository is at milestone 1: a standalone Rust crate with a strict,
-Python-compatible syntax subset. It is not a full `re` replacement and does
-not yet bind to Python.
+Milestones 1, 3, and 4 are implemented: a standalone Rust crate with a
+strict Python-compatible syntax subset, a first-unit prefilter, and a lazy
+DFA. Milestone 2 compatibility work and the milestone 5 Python binding
+remain. It is not a full `re` replacement.
 
 ## Supported syntax
 
@@ -91,21 +92,30 @@ subset and compares `find_iter` spans with CPython `re`.
 downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
 `--corpus` / `RUREX_TG_DATA` for an offline copy. No other checkout is needed.
 
-Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines), and
-`at` (a `memchr` lower bound for the first-unit prefilter).
+Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines).
 
-Full-corpus results, Intel i5-8350U, Rust 1.97.1:
+Full-corpus results, Intel i5-8350U, Rust 1.97.1. Compare only the same
+thread count.
 
-- PikeVM, 1 thread: 5.424 s.
-- Prefilter, 1 thread: 1.266 s; 4 threads: 0.413 s.
-- Lazy DFA, 1 thread: 0.363 s; 4 threads: 0.114 s.
-- Rust `regex` bytes: 0.152 s.
-- Rust `regex` str: 0.181 s.
-- `memchr` `@` scan: 0.074 s.
+One thread:
 
-The DFA is 3.5x faster than the prefiltered PikeVM. It is still about 2.4x
-slower than the bytes baseline at one thread, but faster at four threads. The
-next step is the Python binding and the end-to-end comparison.
+- PikeVM: 5.424 s.
+- Prefilter: 1.266 s.
+- Lazy DFA: 0.360 s.
+- Rust `regex` bytes: 0.169 s.
+- Rust `regex` str: 0.185 s.
+
+Four threads:
+
+- Prefilter: 0.413 s.
+- Lazy DFA: 0.110 s.
+- Rust `regex` bytes: 0.061 s.
+- Rust `regex` str: 0.061 s.
+
+The DFA is 3.5x faster than the prefiltered PikeVM. It is about 2.1x slower
+than the bytes baseline at one thread and 1.8x slower at four threads. It does
+not beat the same-thread baseline. The next step is the Python binding and the
+end-to-end comparison.
 
 ## Not yet implemented
 

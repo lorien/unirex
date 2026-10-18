@@ -2,9 +2,9 @@
 
 ## Compatibility target
 
-The target is Python `re` behavior for the supported syntax. Milestone 1
-accepts a strict subset and rejects everything else, so no accepted pattern
-can silently acquire Rust `regex` semantics.
+The target is Python `re` behavior for the supported syntax. The current
+engine accepts a strict subset and rejects everything else, so no accepted
+pattern can silently acquire Rust `regex` semantics.
 
 The oracle for the accepted subset is CPython `re` itself. `tests/m1.rs` pins
 spans that were generated with CPython, and `tools/python_diff.py` compares
@@ -15,7 +15,7 @@ Milestone 2 adds the remaining Python classes, flags, `$`, and word
 boundaries, and switches the full differential suite to Python `re` on
 generated UCS-1, UCS-2, and UCS-4 strings.
 
-## Milestone 1 subset
+## Current supported subset
 
 Accepted:
 
@@ -61,13 +61,13 @@ CPython spans, including `x*` on `"ab"` and `|a` on `"a"`.
 
 ### `$`
 
-`$` is rejected in milestone 1. Python lets it match before a trailing
+`$` is currently rejected. Python lets it match before a trailing
 newline; Rust `regex` does not, and HIR `EndLF` matches before any newline.
 Milestone 2 implements Python `$` with a dedicated assertion.
 
 ### `\b` and `\w`
 
-Rejected in milestone 1. They use Python's word definition, which is not the
+Currently rejected. They use Python's word definition, which is not the
 same as Rust `regex`'s: Rust includes combining marks, connector punctuation,
 and join controls, while Python means Unicode alphanumerics plus `_`.
 Milestone 2 generates Python-equivalent tables and uses them for `\w`, `\b`,
@@ -97,7 +97,7 @@ Python's rule is enforced:
 
 ### Character classes
 
-Milestone 1 supports literal characters and ranges only. Python treats
+The current subset supports literal characters and ranges only. Python treats
 `&&`, `--`, `~~`, nested `[`, and POSIX forms as literals or as ordinary
 class contents; Rust `regex` gives them set-operation meanings. They are
 rejected instead of being reinterpreted. `[a&b]` and `[a~b]` are accepted
@@ -105,7 +105,7 @@ because a single `&` or `~` is a literal in both dialects.
 
 `[]]`, `[^]]`, `[a-]`, and `[-a]` follow Python's literal-bracket and
 literal-hyphen rules. `[\b]` is rejected even though Python treats it as a
-backspace, because milestone 1 does not implement class escapes beyond the
+backspace, because the current engine does not implement class escapes beyond the
 numeric and fixed-width forms above.
 
 ### Repetition
@@ -113,7 +113,7 @@ numeric and fixed-width forms above.
 Only greedy repetition is accepted. Bounded repetition is unrolled under a
 hard limit. A direct repetition of an assertion is rejected, matching
 Python's "nothing to repeat" error. `a{,2}` is rejected for now; Python 3.11
-and later accept it, and it is not part of the milestone 1 subset.
+and later accept it, and it is not part of the current subset.
 
 `(?#...)` comments are not accepted by the AST parser and are outside the
 subset.
@@ -133,7 +133,7 @@ binding never passes them.
 
 ### Unicode version
 
-Milestone 1 has no Unicode property tables: `\p{...}` is rejected and
+The current engine has no Unicode property tables: `\p{...}` is rejected and
 explicit classes contain exactly the code points written in the pattern.
 There is therefore no Unicode-version dependence until milestone 2 adds
 Python class tables. Those tables must be generated for a documented CPython
@@ -141,7 +141,7 @@ Unicode version, and any version-dependent divergence must be recorded here.
 
 ## Deferred Python behavior
 
-These are intentionally not part of milestone 1 and are tracked for
+These are intentionally not part of the current subset and are tracked for
 milestone 2 or later:
 
 - `$` before a trailing newline.

@@ -20,8 +20,6 @@ source, not a repository dependency.
   or UCS-4), using a reused `Scratch`.
 - `bytes`: Rust `regex::bytes` over UTF-8, a same-machine engine baseline.
 - `str`: Rust `regex` over UTF-8.
-- `at`: `memchr` count of `@` over UTF-8. This is a lower bound for a future
-  first-unit prefilter, not an engine result.
 
 ## Protocol
 
@@ -59,34 +57,34 @@ result must be labeled synthetic.
 Machine: Intel Core i5-8350U, 8 logical cores, Linux, Rust 1.97.1. Full
 corpus, engine-only Rust harness, `--repeat 3`, median reported.
 
-Evolution:
+Evolution, one thread:
 
-- Milestone 1 PikeVM, 1 thread: 5.424 s.
-- Milestone 3 prefilter, 1 thread: 1.266 s; 4 threads: 0.413 s.
-- Milestone 4 DFA, 1 thread: 0.363 s; 4 threads: 0.114 s.
+- Milestone 1 PikeVM: 5.424 s.
+- Milestone 3 prefilter: 1.266 s.
+- Milestone 4 DFA: 0.360 s.
 
-Milestone 4 baselines on the same run:
+Same-thread baselines and engine results:
 
-- Rust `regex` bytes, 1 thread: 0.152 s.
-- Rust `regex` str, 1 thread: 0.181 s.
-- `memchr` `@` scan, 1 thread: 0.074 s.
+- One thread: DFA 0.360 s, Rust `regex` bytes 0.169 s, Rust `regex` str
+  0.185 s.
+- Four threads: DFA 0.110 s, Rust `regex` bytes 0.061 s, Rust `regex` str
+  0.061 s.
+
+The DFA is about 3.5 times faster than the prefiltered PikeVM. It is about
+2.1 times slower than the Rust `regex` bytes engine at one thread and 1.8
+times slower at four threads. It does not beat the same-thread baseline.
 
 Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
 UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing every
 post to UCS-2 would misrepresent about 46 percent of the corpus.
 
-Interpretation:
+The single-thread engine-only result is 0.360 s. The end-to-end target is
+0.75 s, so the remaining question is Python binding and result construction
+overhead. That is milestone 5. Engine-only numbers must not be compared
+directly with `rurex` end-to-end time.
 
-- The DFA is about 3.5 times faster than the prefiltered PikeVM.
-- It is about 2.4 times slower than the Rust `regex` bytes engine at one
-  thread. With four threads it is faster than the single-thread bytes baseline
-  (0.114 s versus 0.152 s).
-- The single-thread engine-only result is now 0.363 s. The end-to-end target
-  is 0.75 s, so the remaining question is Python binding and result
-  construction overhead. That is milestone 5; engine-only numbers must not be
-  compared directly with `rurex` end-to-end time.
-- Patterns without a safe first-unit set still use the PikeVM. The DFA is an
-  optimization, not a change in the supported language or correctness.
+Patterns without a safe first-unit set still use the PikeVM. The DFA is an
+optimization, not a change in the supported language or correctness.
 
 Historical `rurex` and CPython numbers remain external context; they were not
 produced by this harness on this machine and are not used as a pass/fail
@@ -98,7 +96,8 @@ gate.
     cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
     cargo run --release --example bench -- --mode ucs --repeat 3 --threads 4
     cargo run --release --example bench -- --mode bytes --repeat 3
-    cargo run --release --example bench -- --mode at --repeat 3
+    cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
+    cargo run --release --example bench -- --mode str --repeat 3 --threads 4
 
 Add `--json var/bench-results/<name>.json` to keep raw results. Never commit
 the corpus or raw result files.

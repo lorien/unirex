@@ -46,17 +46,15 @@ In scope:
   matching path.
 - Literals, `.`, character classes, alternation, greedy and lazy `* + ? {n,m}`,
   anchors `^ $ \A \z \b \B`, capture groups, flags `i m s x`, and Python's
-  Unicode class semantics, which milestone 1 does not yet implement.
-- Bounded compile time and memory, including a capped lazy DFA if one is
-  added.
-- A first-unit prefilter and, if the benchmark justifies it, a lazy DFA.
+  Unicode class semantics, which are not yet implemented (milestone 2).
+- Bounded compile time and memory, including a capped lazy DFA.
+- A first-unit prefilter and a lazy DFA, both implemented.
 - A PyO3 binding as a later milestone, not a first milestone.
 
-Milestone 1 accepts only the strict subset documented in
-`spec/docs/semantics.md`: literals, `.`, explicit classes, alternation,
-greedy repetition, `^`, `\A`, `\Z`, `\z`, grouping, and fixed-width or
-Python octal escapes. `$`, `\w`, `\b`, flags, lazy repetition, and named
-groups are rejected until milestone 2.
+The engine accepts the strict subset documented in `spec/docs/semantics.md`:
+literals, `.`, explicit classes, alternation, greedy repetition, `^`, `\A`,
+`\Z`, `\z`, grouping, and fixed-width or Python octal escapes. `$`, `\w`,
+`\b`, flags, lazy repetition, and named groups are rejected until milestone 2.
 
 Out of scope by design, rejected at compile time: backreferences, lookaround,
 atomic groups, possessive quantifiers, conditionals, and recursion.
@@ -80,7 +78,7 @@ general-purpose package. It is an experiment that may later contribute a
 
 ## Repository layout
 
-Milestone 1 is implemented. The current layout is:
+Milestones 1, 3, and 4 are implemented. The current layout is:
 
 - `AGENTS.md` — pointer for coding agents.
 - `README.md` — supported syntax, rejected syntax, design summary, commands.
@@ -91,9 +89,10 @@ Milestone 1 is implemented. The current layout is:
 - `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` — crate and toolchain.
 - `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, `Scratch`, and
   the `Matches` and `MatchesWith` iterators.
-- `src/ucs.rs` — the three-kind haystack view.
+- `src/ucs.rs` — the three-kind haystack view and the unit search trait.
 - `src/compile.rs` — Python-dialect adapter, AST validation, and lowering.
-- `src/pikevm.rs` — the linear-time group-0 simulation.
+- `src/pikevm.rs` — Scratch, the group-0 PikeVM, and DFA dispatch.
+- `src/dfa.rs` — lazy DFA over code-point equivalence classes.
 - `src/error.rs` — compile and usage errors.
 - `tests/m1.rs` — accepted subset, Python spans, UCS kinds, adversarial
   timing, scratch reuse, and the Rust `regex` common-subset differential.
@@ -103,6 +102,7 @@ Milestone 1 is implemented. The current layout is:
 - `var/` — gitignored corpus cache, raw benchmark results, and local
   artifacts.
 
-The benchmark harness exists. Later milestones add `src/prefilter.rs`,
-`src/dfa.rs`, and the PyO3 binding. The current plan is in
+The benchmark harness, first-unit prefilter, and lazy DFA exist. Remaining
+work is Python class/flag/capture compatibility (milestone 2) and the PyO3
+binding with the end-to-end benchmark (milestone 5). The current plan is in
 `spec/docs/plan.md`.

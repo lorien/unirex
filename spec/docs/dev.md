@@ -13,9 +13,10 @@
 
 ## Dependencies
 
-- `regex-syntax` 0.8 for AST parsing.
+- Core: `regex-syntax` 0.8 for AST parsing, `memchr` and `bytemuck` for the
+  first-unit prefilter.
 - Dev-only: `regex` for differential and benchmark baselines; `serde`,
-  `serde_json`, `flate2`, `memchr`, `ureq`, and `sha2` for the benchmark.
+  `serde_json`, `flate2`, `ureq`, and `sha2` for the benchmark.
 - No Python dependency in the core crate.
 
 Add a dependency only with a reason recorded in the commit message or an ADR.
@@ -37,7 +38,8 @@ Benchmark commands:
     cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
     cargo run --release --example bench -- --mode ucs --repeat 3
     cargo run --release --example bench -- --mode bytes --repeat 3
-    cargo run --release --example bench -- --mode at --repeat 3
+    cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
+    cargo run --release --example bench -- --mode str --repeat 3 --threads 4
 
 The benchmark downloads and SHA-256 verifies the corpus into
 `var/bench-data/tg-1m.json.gz` on first use. Use `--corpus` or

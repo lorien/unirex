@@ -2,10 +2,10 @@
 
 ## Current state
 
-Milestone 1 is implemented: a standalone crate with a strict Python-dialect
-subset, a Thompson program, and a group-0 PikeVM over UCS-1, UCS-2, and UCS-4.
-Captures, the remaining Python classes and flags, the prefilter, the lazy DFA,
-the benchmark, and the Python binding are later milestones.
+Milestones 1, 3, and 4 are implemented: a standalone crate with a strict
+Python-dialect subset, a Thompson program, a group-0 PikeVM, a first-unit
+prefilter, and a lazy DFA over UCS-1, UCS-2, and UCS-4. Captures, the remaining
+Python classes and flags, and the Python binding remain.
 
 ## Compilation pipeline
 
@@ -17,19 +17,20 @@ the benchmark, and the Python binding are later milestones.
    the AST, not HIR, because the AST preserves the distinction between `$` and
    `\Z` and lets the adapter reject Rust-only constructs before they acquire
    Rust semantics.
-3. This crate validates the strict milestone 1 subset and lowers the AST into
+3. This crate validates the current strict subset and lowers the AST into
    a `Program`: a flat instruction vector plus a class set. Case folding and
    Unicode categories are resolved at compile time in later milestones.
-4. The PikeVM runs the program. A later milestone may add a lazy DFA for match
-   start and end, with the PikeVM kept as the fallback and capture engine.
+4. The lazy DFA handles the no-capture fast path for patterns with a safe
+   first-unit set. The PikeVM remains the fallback, the capture engine, and the
+   general matcher.
 
 Compilation is a pure function of the pattern. A compiled `Regex` is immutable
 and can be reused across haystacks and threads.
 
 ## Python dialect adapter
 
-`regex-syntax` is a Rust-dialect parser, not a neutral syntax tree. Milestone 1
-therefore accepts a strict subset and rejects everything else with a positioned
+`regex-syntax` is a Rust-dialect parser, not a neutral syntax tree. The
+current engine therefore accepts a strict subset and rejects everything else with a positioned
 error:
 
 - Accepted: literals, `.`, explicit classes and ranges, alternation, greedy
@@ -72,7 +73,7 @@ The lowered program uses a small Thompson-style instruction set:
 - `Class(class_id)` — consume one code point in the compiled class.
 - `Split(a, b)` — epsilon transition to either target, in priority order.
 - `Jump(pc)` — epsilon transition to one target.
-- `Assert(kind)` — zero-width assertion: start or end in milestone 1.
+- `Assert(kind)` — zero-width assertion: start or end in the current subset.
 - `Match` — report the current position.
 
 Repetition is compiled to `Split` and `Jump`; bounded `{n,m}` is unrolled with
@@ -86,12 +87,13 @@ word boundaries.
 
 The canonical class form is a sorted, non-overlapping list of inclusive
 `(u32, u32)` ranges, plus a negation flag. Membership uses binary search.
-Milestone 1 lowers only explicit classes and `.`; per-kind accelerators
-(bitmaps, two-level tables) are added with the prefilter in milestone 3.
+The engine lowers explicit classes and `.`. The first-unit prefilter uses
+`memchr` for single units; per-kind class bitmaps and two-level tables remain
+future optimizations.
 
 Every accelerator must be derived from the same range list, so membership is
-identical across UCS kinds. Class maps for the lazy DFA are separate and are
-built only in milestone 4.
+identical across UCS kinds. The lazy DFA builds separate equivalence-class
+maps for UCS-1, UCS-2, and UCS-4.
 
 ## PikeVM
 
@@ -187,9 +189,10 @@ the DFA scans forward from each candidate.
   remains the general matcher for patterns without a safe first set, for
   captures, and for any construct outside the DFA path.
 
-The full benchmark improved from 1.266 s to 0.363 s at one thread and from
-0.413 s to 0.114 s at four threads. The Rust `regex` bytes baseline is about
-0.152 s at one thread. See `benchmarks.md`.
+The full benchmark improved from 1.266 s to 0.360 s at one thread and from
+0.413 s to 0.110 s at four threads. The Rust `regex` bytes baseline is 0.169 s
+at one thread and 0.061 s at four threads; the DFA does not beat the
+same-thread baseline. See `benchmarks.md`.
 
 ## Python binding
 
@@ -214,8 +217,8 @@ Milestone 5 uses PyO3 and maturin. The binding:
   from validated CPython pointers, with a documented safety argument.
 - Compile limits bound pattern length, program size, repetition count, class
   count, and total class ranges.
-- The DFA cache will have a hard state cap. The PikeVM thread lists and
-  visited set are sized by the program, not by the haystack.
+- The DFA cache has a hard state cap. The PikeVM thread lists and visited set
+  are sized by the program, not by the haystack.
 - Per-call allocation is avoided on the hot path; buffers are reused.
 
 ## Module layout

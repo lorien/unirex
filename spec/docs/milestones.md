@@ -49,8 +49,7 @@ Status: implemented.
 - Conservative first-unit extraction from the lowered program.
 - False-negative-free candidate skipping for UCS-1, UCS-2, and UCS-4.
 - Full-corpus benchmark using the actual CPython kind of each post, plus
-  same-machine Rust `regex` bytes and str baselines and a `memchr` lower
-  bound.
+  same-machine Rust `regex` bytes and str baselines.
 
 Results: 5.424 s before the prefilter, 1.266 s after at one thread, 0.413 s at
 four threads. The prefilter is necessary but not sufficient.
@@ -72,8 +71,9 @@ Status: implemented.
 - DFA used when a safe first-unit set exists; the prefilter selects candidates.
   Other patterns remain correct through the PikeVM.
 
-Results: 1.266 s to 0.363 s at one thread, and 0.413 s to 0.114 s at four
-threads. The Rust `regex` bytes baseline is 0.152 s at one thread.
+Results: 1.266 s to 0.360 s at one thread, and 0.413 s to 0.110 s at four
+threads. The Rust `regex` bytes baseline is 0.169 s at one thread and 0.061 s
+at four threads. The DFA does not beat the same-thread baseline.
 
 Acceptance: cache cap and fallback are tested; DFA results match the PikeVM on
 the differential and assertion suites; the DFA is faster on the full corpus.

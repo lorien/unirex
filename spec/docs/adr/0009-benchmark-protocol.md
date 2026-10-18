@@ -1,7 +1,7 @@
 # Benchmark Protocol
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (the `at` diagnostic was removed after the DFA work)
 
 ## Context
 

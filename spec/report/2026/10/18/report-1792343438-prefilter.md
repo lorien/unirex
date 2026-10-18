@@ -49,13 +49,17 @@ three engine-only runs.
 - With prefilter, 4 threads: 0.413 s.
 - Rust `regex` bytes, 1 thread: 0.179 s (0.15 s to 0.18 s across runs).
 - Rust `regex` str, 1 thread: 0.215 s.
-- `memchr` `@` scan, 1 thread: 0.077 s.
 
 The prefilter is about 4.3 times faster than the unfiltered PikeVM. It is
-still about 7 times slower than the bytes baseline at one thread and about 2.3
-times slower at four threads. The candidate scan is no longer the dominant
-cost; the remaining time is the PikeVM work at each `@` candidate and its
-per-call overhead. The lazy DFA is required.
+still about 7 times slower than the one-thread bytes baseline. No same-thread
+four-thread baseline was measured in that session; that was corrected in the
+milestone 4 benchmark. The candidate scan is no longer the dominant cost; the
+remaining time is the PikeVM work at each `@` candidate and its per-call
+overhead. The lazy DFA is required.
+
+The `memchr` `@` diagnostic was later removed from the benchmark: it was a
+byte-search diagnostic, not a regex engine or baseline, and it counted `@`
+marks rather than mentions.
 
 ### Spec/ADR amendments
 

@@ -33,8 +33,9 @@ References: ADR-0003, ADR-0007, ADR-0008
 Status: new
 Priority: 4
 
-The DFA benchmark is 0.363 s at one thread and 0.114 s at four threads. Rust
-`regex` bytes is 0.152 s at one thread. Add the PyO3 and maturin binding for
+The DFA benchmark is 0.360 s at one thread and 0.110 s at four threads. Rust
+`regex` bytes is 0.169 s at one thread and 0.061 s at four threads, so the DFA
+does not beat the same-thread baseline yet. Add the PyO3 and maturin binding for
 the current supported subset with validated PEP 393 layout detection, result
 construction from the UCS buffer, and GIL release for large haystacks.
 Benchmark end to end against the current `rurex` str path. Support CPython

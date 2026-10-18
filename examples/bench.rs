@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use exp_rurex::{Regex, Ucs};
 use flate2::read::MultiGzDecoder;
-use memchr::memchr_iter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -42,7 +41,6 @@ enum Mode {
     Ucs,
     Bytes,
     Str,
-    At,
 }
 
 impl Mode {
@@ -51,7 +49,6 @@ impl Mode {
             "ucs" => Some(Mode::Ucs),
             "bytes" => Some(Mode::Bytes),
             "str" => Some(Mode::Str),
-            "at" => Some(Mode::At),
             _ => None,
         }
     }
@@ -61,14 +58,6 @@ impl Mode {
             Mode::Ucs => "ucs",
             Mode::Bytes => "bytes",
             Mode::Str => "str",
-            Mode::At => "at",
-        }
-    }
-
-    fn count_kind(self) -> &'static str {
-        match self {
-            Mode::At => "at_marks",
-            _ => "mentions",
         }
     }
 }
@@ -238,28 +227,6 @@ fn run() -> Result<(), String> {
                 &runs,
             )
         }
-        Mode::At => {
-            let corpus = load_bytes(&corpus_path, opts.limit)?;
-            let runs: Vec<Trial> = (0..opts.repeat)
-                .map(|_| scan_at(&corpus, opts.threads))
-                .collect();
-            build_report(
-                &opts,
-                &corpus_path,
-                corpus_sha256.clone(),
-                Mode::At,
-                CorpusShape {
-                    posts: corpus.posts.len(),
-                    utf8_bytes: corpus.utf8_bytes,
-                    units: corpus.utf8_bytes,
-                    kind_posts: [0; 3],
-                    kind_units: [0; 3],
-                    expected_mentions: 0,
-                    expected_posts_with: 0,
-                },
-                &runs,
-            )
-        }
     };
 
     let human = format!(
@@ -291,7 +258,7 @@ fn print_usage() {
          \n\
          options:\n\
            --corpus PATH        corpus .jsonl or .json.gz (overrides cache/download)\n\
-           --mode MODE          ucs (default), bytes, str, at\n\
+           --mode MODE          ucs (default), bytes, str\n\
            --limit N            load only the first N posts\n\
            --repeat N           timed runs (default 3; first run is cold)\n\
            --threads N          worker threads (default 1)\n\
@@ -321,7 +288,7 @@ fn parse_args() -> Result<Options, String> {
             "--mode" => {
                 let value = next_value(&mut args, "--mode")?;
                 opts.mode = Mode::parse(&value)
-                    .ok_or_else(|| format!("unknown mode {value:?}; use ucs, bytes, str, or at"))?;
+                    .ok_or_else(|| format!("unknown mode {value:?}; use ucs, bytes, or str"))?;
             }
             "--limit" => {
                 let value: usize = next_value(&mut args, "--limit")?
@@ -925,43 +892,6 @@ fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize) -> Trial {
     combine(trials)
 }
 
-fn scan_at(corpus: &BytesCorpus, threads: usize) -> Trial {
-    let bounds = chunk_bounds(corpus.posts.len(), threads);
-    let barrier = Barrier::new(bounds.len());
-    let data = corpus.data.as_bytes();
-    let trials = std::thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(bounds.len());
-        for (start, end) in bounds {
-            let barrier = &barrier;
-            handles.push(scope.spawn(move || {
-                barrier.wait();
-                let timer = Instant::now();
-                let mut count = 0;
-                let mut posts_with = 0;
-                for &(post_start, post_end) in &corpus.posts[start..end] {
-                    let slice = &data[post_start as usize..post_end as usize];
-                    let marks = memchr_iter(b'@', slice).count();
-                    count += marks;
-                    if marks > 0 {
-                        posts_with += 1;
-                    }
-                }
-                std::hint::black_box(count);
-                Trial {
-                    count,
-                    posts_with,
-                    elapsed: timer.elapsed(),
-                }
-            }));
-        }
-        handles
-            .into_iter()
-            .map(|handle| handle.join().expect("worker panicked"))
-            .collect::<Vec<_>>()
-    });
-    combine(trials)
-}
-
 struct CorpusShape {
     posts: usize,
     utf8_bytes: usize,
@@ -1047,7 +977,7 @@ fn build_report(
         ucs2_units: shape.kind_units[1],
         ucs4_units: shape.kind_units[2],
         count: runs[0].count,
-        count_kind: mode.count_kind().to_string(),
+        count_kind: "mentions".to_string(),
         posts_with_count: runs[0].posts_with,
         expected_mentions: shape.expected_mentions,
         expected_posts_with_mentions: shape.expected_posts_with,
@@ -1144,10 +1074,9 @@ fn self_test() -> Result<(), String> {
         ));
     }
 
-    let at = scan_at(&bytes_corpus, 2);
     println!(
-        "self-test ok: {} mentions in {} posts, {} '@' marks",
-        ucs.count, ucs.posts_with, at.count
+        "self-test ok: {} mentions in {} posts",
+        ucs.count, ucs.posts_with
     );
     Ok(())
 }
