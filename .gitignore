@@ -1,0 +1,15 @@
+# Local secrets
+/.env
+
+# Local scratch data and generated artifacts
+/var/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Rust / general build output
+/target/
+/build/
