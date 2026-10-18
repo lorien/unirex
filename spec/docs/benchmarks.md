@@ -81,30 +81,31 @@ Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
 Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
 CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
 Governor stayed `powersave`, turbo enabled. Frequency was 4.6 GHz to 4.8 GHz.
-Load was 1.5 to 2.1 from other work, but per-worker efficiency stayed at 0.91
+Load was 0.4 to 1.5 from other work, but per-worker efficiency stayed at 0.93
 to 1.0. `/tmp/core4.lock` was held for the whole matrix.
 
 Engine-only medians, full corpus:
 
-- 1 thread: UCS 0.1912 s, Rust `regex` bytes 0.0712 s, str 0.0713 s.
-- 2 threads: UCS 0.0983 s, bytes 0.0380 s, str 0.0380 s.
-- 3 threads: UCS 0.0694 s, bytes 0.0268 s, str 0.0267 s.
-- 4 threads: UCS 0.0536 s, bytes 0.0210 s, str 0.0211 s.
+- 1 thread: UCS 0.1322 s, Rust `regex` bytes 0.0712 s, str 0.0713 s.
+- 2 threads: UCS 0.0689 s, bytes 0.0380 s, str 0.0380 s.
+- 3 threads: UCS 0.0469 s, bytes 0.0268 s, str 0.0267 s.
+- 4 threads: UCS 0.0366 s, bytes 0.0210 s, str 0.0211 s.
 
-UCS scales 3.56 times from 1 to 4 threads; bytes scales 3.39 times. UCS is
-2.69 times slower than bytes at one thread and 2.55 times slower at four
-threads.
+UCS scales 3.61 times from 1 to 4 threads; bytes scales 3.39 times. UCS is
+1.86 times slower than bytes at one thread and 1.74 times slower at four
+threads. This is after caching initial DFA states and replacing the transition
+hash map with dense per-state rows.
 
 End-to-end Python, same CPU lists, GIL:
 
-- 1 thread: `exp_rurex` 0.2960 s median, 0.2941 s minimum; CPython `re`
-  0.1909 s median, 0.1903 s minimum.
-- 2 threads: `exp_rurex` 0.2972 s; `re` 0.1957 s.
-- 3 threads: `exp_rurex` 0.3330 s; `re` 0.3572 s.
-- 4 threads: `exp_rurex` 0.5474 s; `re` 0.4419 s.
+- 1 thread: `exp_rurex` 0.2308 s median, 0.2289 s minimum; CPython `re`
+  0.1914 s median, 0.1903 s minimum.
+- 2 threads: `exp_rurex` 0.2288 s; `re` 0.1957 s.
+- 3 threads: `exp_rurex` 0.2307 s; `re` 0.3906 s.
+- 4 threads: `exp_rurex` 0.3289 s; `re` 0.4508 s.
 
 The GIL prevents scaling beyond one thread; the 1-thread result is the
-meaningful end-to-end number. `exp_rurex` is about 1.55 times slower than
+meaningful end-to-end number. `exp_rurex` is about 1.21 times slower than
 CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but
 this CPU is much faster than the original laptop baseline, and no `rurex`
 engine was run.

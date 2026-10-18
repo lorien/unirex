@@ -102,14 +102,14 @@ hold the exclusive `/tmp/core4.lock` lease for the whole run.
 Full-corpus results on `regexus` (Intel i5-13500, first four physical P-cores
 `0,2,4,6`, one thread per core, SMT siblings idle, `/tmp/core4.lock` held):
 
-- 1 thread: UCS 0.191 s, Rust `regex` bytes 0.071 s, str 0.071 s.
-- 2 threads: UCS 0.098 s, bytes 0.038 s, str 0.038 s.
-- 3 threads: UCS 0.069 s, bytes 0.027 s, str 0.027 s.
-- 4 threads: UCS 0.054 s, bytes 0.021 s, str 0.021 s.
+- 1 thread: UCS 0.132 s, Rust `regex` bytes 0.071 s, str 0.071 s.
+- 2 threads: UCS 0.069 s, bytes 0.038 s, str 0.038 s.
+- 3 threads: UCS 0.047 s, bytes 0.027 s, str 0.027 s.
+- 4 threads: UCS 0.037 s, bytes 0.021 s, str 0.021 s.
 
-The DFA is 3.5x faster than the prefiltered PikeVM and scales 3.56x from one
-to four P-cores. It remains about 2.7x slower than Rust `regex` bytes at one
-thread and 2.55x slower at four.
+The DFA is 3.5x faster than the prefiltered PikeVM and scales 3.61x from one
+to four P-cores. It remains about 1.86x slower than Rust `regex` bytes at one
+thread and 1.74x slower at four.
 
 Earlier laptop numbers were wall-clock only and are kept in
 `spec/docs/benchmarks.md` as historical.
@@ -147,10 +147,10 @@ rx.is_match("hello @alice123")
 
 End-to-end, one thread, GIL, full corpus, remote `regexus`:
 
-- `exp_rurex`: median 0.296 s, minimum 0.294 s.
+- `exp_rurex`: median 0.231 s, minimum 0.229 s.
 - CPython `re`: median 0.191 s, minimum 0.190 s.
 
-`exp_rurex` is about 1.55x slower than CPython `re`. It is below the 0.75 s and
+`exp_rurex` is about 1.21x slower than CPython `re`. It is below the 0.75 s and
 0.45 s targets on this machine, but the remote CPU is much faster than the
 original laptop. GIL threads 2-4 do not scale.
 

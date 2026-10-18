@@ -4,21 +4,6 @@ Open-task list. Format, statuses, and lifecycle:
 `spec/skills/task_tracking.md`. Priorities: higher number = more important;
 `-1` = deferred.
 
-## Optimize the DFA fast path
-
-Status: new
-Priority: 4
-
-Remote `regexus`, one thread on the first four physical P-cores: end-to-end
-`exp_rurex` is 0.296 s median versus 0.191 s for CPython `re`. Engine-only, the
-DFA is 0.191 s versus 0.071 s for Rust `regex` bytes. The binding overhead is
-not the main gap; the per-candidate DFA setup and transition lookup are.
-Optimize the DFA fast path and rerun both the engine-only and end-to-end
-benchmarks. Acceptance: engine-only moves substantially toward 0.071 s, and
-end-to-end moves toward the same-machine CPython `re` time of 0.191 s.
-
-References: ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014
-
 ## Set up continuous integration
 
 Status: new

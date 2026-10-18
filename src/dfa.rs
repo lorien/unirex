@@ -13,6 +13,9 @@ use crate::ucs::{UcsKind, Unit};
 
 const MAX_CODEPOINT: u32 = 0x10FFFF;
 const MAX_DFA_STATES: usize = 4096;
+const MAX_TRANSITION_CELLS: usize = 4_000_000;
+const UNKNOWN: u32 = u32::MAX;
+const DEAD: u32 = u32::MAX - 1;
 
 /// The result of a DFA search.
 pub(crate) enum FindResult {
@@ -47,9 +50,11 @@ pub(crate) struct Cache {
     ucs2: Vec<u16>,
     ucs4: Vec<u16>,
     representatives: Vec<u32>,
+    num_classes: usize,
     states: Vec<StateData>,
     index: HashMap<StateData, usize>,
-    transitions: HashMap<(usize, u16), Option<usize>>,
+    transitions: Vec<Vec<u32>>,
+    initial: [Option<usize>; 4],
     overflowed: bool,
     limit: usize,
 }
@@ -70,17 +75,28 @@ impl Cache {
             return None;
         }
         let representatives = boundaries[..class_count].to_vec();
-        Some(Cache {
+        let mut cache = Cache {
             ucs1: build_map(&boundaries, 0x100),
             ucs2: build_map(&boundaries, 0x1_0000),
             ucs4: build_map(&boundaries, 0x11_0000),
             representatives,
+            num_classes: class_count,
             states: Vec::new(),
             index: HashMap::new(),
-            transitions: HashMap::new(),
+            transitions: Vec::new(),
+            initial: [None; 4],
             overflowed: false,
             limit,
-        })
+        };
+        for (index, (at_start, at_end)) in
+            [(false, false), (true, false), (false, true), (true, true)]
+                .into_iter()
+                .enumerate()
+        {
+            let state = closure(program, &[program.start], at_start, at_end);
+            cache.initial[index] = cache.intern(state);
+        }
+        Some(cache)
     }
 
     fn class_id(&self, kind: UcsKind, unit: u32) -> Option<u16> {
@@ -92,22 +108,29 @@ impl Cache {
         }
     }
 
-    fn initial(&mut self, program: &Program, start: usize, hay_len: usize) -> Option<usize> {
-        let state = closure(program, &[program.start], start == 0, start == hay_len);
-        self.intern(state)
+    fn initial_state(&self, at_start: bool, at_end: bool) -> Option<usize> {
+        let index = usize::from(at_start) | (usize::from(at_end) << 1);
+        self.initial[index]
     }
 
     fn transition(&mut self, program: &Program, state_id: usize, class_id: u16) -> Option<usize> {
-        let key = (state_id, class_id);
-        if let Some(&cached) = self.transitions.get(&key) {
-            return cached;
+        let class = usize::from(class_id);
+        let cached = self.transitions[state_id][class];
+        if cached != UNKNOWN {
+            return if cached == DEAD {
+                None
+            } else {
+                Some(cached as usize)
+            };
         }
-        let representative = self.representatives[usize::from(class_id)];
-        let consume = self.states[state_id].consume.clone();
+        let representative = self.representatives[class];
         let mut seeds = Vec::new();
-        for pc in consume {
-            if instruction_matches(program, pc, representative) {
-                seeds.push(pc + 1);
+        {
+            let consume = &self.states[state_id].consume;
+            for &pc in consume {
+                if instruction_matches(program, pc, representative) {
+                    seeds.push(pc + 1);
+                }
             }
         }
         let next = if seeds.is_empty() {
@@ -116,7 +139,7 @@ impl Cache {
             let state = closure(program, &seeds, false, false);
             self.intern(state)
         };
-        self.transitions.insert(key, next);
+        self.transitions[state_id][class] = next.map_or(DEAD, |id| id as u32);
         next
     }
 
@@ -136,9 +159,20 @@ impl Cache {
             self.overflowed = true;
             return None;
         }
+        if self
+            .states
+            .len()
+            .saturating_add(1)
+            .saturating_mul(self.num_classes)
+            > MAX_TRANSITION_CELLS
+        {
+            self.overflowed = true;
+            return None;
+        }
         let id = self.states.len();
         self.index.insert(state.clone(), id);
         self.states.push(state);
+        self.transitions.push(vec![UNKNOWN; self.num_classes]);
         Some(id)
     }
 
@@ -268,7 +302,7 @@ fn find_at<U: Unit>(
     start: usize,
     retry_nonempty_at: Option<usize>,
 ) -> FindResult {
-    let mut state_id = match cache.initial(program, start, hay.len()) {
+    let mut state_id = match cache.initial_state(start == 0, start == hay.len()) {
         Some(id) => id,
         None => return FindResult::Overflow,
     };

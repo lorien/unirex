@@ -71,9 +71,10 @@ Status: implemented.
 - DFA used when a safe first-unit set exists; the prefilter selects candidates.
   Other patterns remain correct through the PikeVM.
 
-Results: 1.266 s to 0.360 s at one thread, and 0.413 s to 0.110 s at four
-threads. The Rust `regex` bytes baseline is 0.169 s at one thread and 0.061 s
-at four threads. The DFA does not beat the same-thread baseline.
+Results: local 1.266 s to 0.360 s at one thread. After initial-state caching
+and dense transitions, remote `regexus` is 0.132 s at one thread and 0.037 s at
+four. Rust `regex` bytes is 0.071 s at one thread and 0.021 s at four; the DFA
+does not beat the same-thread baseline.
 
 Acceptance: cache cap and fallback are tested; DFA results match the PikeVM on
 the differential and assertion suites; the DFA is faster on the full corpus.
@@ -92,10 +93,10 @@ builds are unverified.
 
 Remote `regexus`, first four physical P-cores, one thread, GIL:
 
-- `exp_rurex`: median 0.296 s, minimum 0.294 s.
+- `exp_rurex`: median 0.231 s, minimum 0.229 s.
 - CPython `re`: median 0.191 s, minimum 0.190 s.
 
-The binding works and counts are correct, but it is about 1.55 times slower than
+The binding works and counts are correct, but it is about 1.21 times slower than
 CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but the
 remote CPU is much faster than the original laptop. Engine optimization is the
 next step; the DFA is still about 2.7 times slower than Rust `regex` bytes at

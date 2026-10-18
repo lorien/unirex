@@ -73,8 +73,9 @@ than the original laptop. No `rurex` engine was run.
 
 ### Spec/ADR amendments
 
-- [open] Optimize the DFA fast path. Engine-only UCS is still 2.69 times slower
-  than Rust `regex` bytes at one thread. This is the next plan task.
+- [acted] Optimize the DFA fast path. Initial-state caching and dense
+  transition rows improved engine-only UCS from 0.1912 s to 0.1322 s and
+  end-to-end from 0.2960 s to 0.2308 s.
 - [open] Add a process-based Python mode for many-core end-to-end runs. GIL
   threads do not scale.
 - [open] Verify CPython 3.10 through 3.15 and free-threaded 3.14t.

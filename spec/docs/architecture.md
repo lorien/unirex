@@ -189,10 +189,12 @@ the DFA scans forward from each candidate.
   remains the general matcher for patterns without a safe first set, for
   captures, and for any construct outside the DFA path.
 
-The full benchmark improved from 1.266 s to 0.360 s at one thread and from
-0.413 s to 0.110 s at four threads. The Rust `regex` bytes baseline is 0.169 s
-at one thread and 0.061 s at four threads; the DFA does not beat the
-same-thread baseline. See `benchmarks.md`.
+The local benchmark improved from 1.266 s to 0.360 s at one thread. After
+caching initial DFA states and replacing the transition hash map with dense
+per-state rows, the remote `regexus` benchmark reached 0.132 s at one thread
+and 0.037 s at four. Rust `regex` bytes is 0.071 s at one thread and 0.021 s at
+four, so the DFA still does not beat the same-thread baseline. See
+`benchmarks.md`.
 
 ## Python binding
 
@@ -217,8 +219,8 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   not `re.findall`'s group tuples.
 
 End-to-end benchmark on `regexus`, full corpus, one thread, GIL:
-`exp_rurex` was 0.296 s median, 0.294 s minimum; CPython `re` was 0.191 s
-median, 0.190 s minimum. The binding works, but the engine is about 1.55 times
+`exp_rurex` was 0.231 s median, 0.229 s minimum; CPython `re` was 0.191 s
+median, 0.190 s minimum. The binding works, but the engine is about 1.21 times
 slower than CPython `re`. GIL threads 2-4 do not scale. See `benchmarks.md`.
 
 ## Memory and safety
