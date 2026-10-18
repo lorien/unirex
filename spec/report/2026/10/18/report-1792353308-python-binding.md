@@ -93,7 +93,8 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 - [acted] Keep a Cargo-only path for environments without maturin:
   `cargo build --release --features extension-module`, then place
   `libexp_rurex.so` on `PYTHONPATH` as `exp_rurex.so`.
-- [open] End-to-end timings vary with system load. Use fresh processes, CPU
-  pinning, and minimum or median over several runs.
+- [acted] End-to-end timings varied with system load. The Python runner now
+  supports CPU pinning, warmups, thread CPU time, load/frequency reporting,
+  and efficiency-based retries.
 - [open] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.

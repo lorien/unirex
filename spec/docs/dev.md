@@ -17,7 +17,8 @@
   first-unit prefilter.
 - Optional: `pyo3` behind the `python` and `extension-module` features.
 - Dev-only: `regex` for differential and benchmark baselines; `serde`,
-  `serde_json`, `flate2`, `ureq`, and `sha2` for the benchmark.
+  `serde_json`, `flate2`, `ureq`, `sha2`, and `libc` for the benchmark's
+  affinity and CPU-time measurements.
 - No Python dependency in the core crate without the Python feature.
 
 Add a dependency only with a reason recorded in the commit message or an ADR.
@@ -36,11 +37,11 @@ Prefer the standard library for anything small.
 Benchmark commands:
 
     cargo run --release --example bench -- --self-test
-    cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
-    cargo run --release --example bench -- --mode ucs --repeat 3
-    cargo run --release --example bench -- --mode bytes --repeat 3
-    cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
-    cargo run --release --example bench -- --mode str --repeat 3 --threads 4
+    cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
+    cargo run --release --example bench -- --mode ucs --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    cargo run --release --example bench -- --mode ucs --threads 4 --cpu-list 0,1,2,3 --warmup-seconds 2 --repeat 5
+    cargo run --release --example bench -- --mode bytes --cpu-list 2 --warmup-seconds 2 --repeat 5
+    cargo run --release --example bench -- --mode str --cpu-list 2 --warmup-seconds 2 --repeat 5
 
 Python binding:
 
@@ -49,12 +50,17 @@ Python binding:
     pip install maturin
     maturin develop --release
     python3 tools/test_python_binding.py
-    python3 tools/bench_python.py --engine exp_rurex --repeat 1
+    python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 
 For a Cargo-only build, run `cargo build --release --features extension-module`
 and put `target/release/libexp_rurex.so` on `PYTHONPATH` as
 `exp_rurex.so`. The `pyproject.toml` uses maturin with the `extension-module`
 feature and is non-abi3.
+
+Benchmark runs pin workers, warm up, measure CPU time, and discard runs whose
+per-worker CPU/wall ratio falls below `--min-efficiency`. If external load
+prevents clean runs, the runner exits instead of reporting a contaminated
+number. It never changes the CPU governor.
 
 The benchmark downloads and SHA-256 verifies the corpus into
 `var/bench-data/tg-1m.json.gz` on first use. Use `--corpus` or

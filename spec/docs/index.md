@@ -58,3 +58,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0012-cpython-ucs-access.md](adr/0012-cpython-ucs-access.md) — the
   binding uses CPython's UCS accessors and `PyUnicode_Substring`, not private
   PEP 393 offsets or UTF-8 conversion.
+- [adr/0013-load-aware-benchmark.md](adr/0013-load-aware-benchmark.md) —
+  observational benchmarking with pinning, warmup, CPU time, per-worker
+  efficiency, and rejection of contaminated runs.

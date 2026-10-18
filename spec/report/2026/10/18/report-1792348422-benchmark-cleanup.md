@@ -64,7 +64,8 @@ PikeVM. The remaining gap is in per-candidate DFA setup and transition lookup.
   a single-thread byte-search diagnostic, not a thread or a regex baseline.
 - [acted] Compare only same-thread results. Cross-thread claims were removed
   from all current docs and reports.
-- [open] `bytes` timing still varies between 0.12 s and 0.18 s at one thread.
-  Use more repeats or CPU pinning for small comparisons.
+- [acted] `bytes` timing varied with load and frequency. The load-aware
+  runner now pins workers, warms up, measures CPU time, and rejects
+  contaminated runs.
 - [open] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.

@@ -96,7 +96,8 @@ Results, cold fresh process, one thread, GIL, full corpus:
 - CPython `re`: median 0.501 s, minimum 0.490 s.
 
 The binding works and counts are correct, but it is about 1.2 times slower than
-CPython `re`.
+CPython `re`. These numbers predate the load-aware protocol and are
+provisional.
 Engine optimization is the next step; the DFA is still about twice as slow as
 Rust `regex` bytes at one thread. The 0.75 s baseline is met only in the best
 runs, not reliably. The ideal 0.45 s target is not met.

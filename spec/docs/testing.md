@@ -53,10 +53,11 @@ Run from the repository root:
     cargo test --release
     python3 tools/python_diff.py --patterns 1000
     cargo run --release --example bench -- --self-test
+    cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
     cargo check --features python
     cargo build --release --features extension-module
     PYTHONPATH=var/py python3 tools/test_python_binding.py
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --limit 100000 --repeat 1
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
 
 Timing assertions use release builds. A debug-build timing test is not
 meaningful and must not gate CI. The Python harness needs a `python3` with
@@ -82,11 +83,13 @@ Before every commit:
 5. **No stray files.** `git status --short` shows only intended changes.
    Corpus data, build output, local artifacts, and temporary examples stay
    under `var/` or in `.env`, both gitignored.
-6. **Benchmark portability.** The benchmark must not reference an absolute
-   host path or another checkout. Run `--self-test` after a fresh checkout or
-   a copy outside the original source tree. A benchmark result is valid only
-   if its mention count matches the independent naive count; the full corpus
-   must report 334,136 mentions in 186,226 posts.
+6. **Benchmark portability and load.** The benchmark must not reference an
+   absolute host path or another checkout. Run `--self-test` after a fresh
+   checkout or a copy outside the original source tree. A benchmark result is
+   valid only if its mention count matches the independent naive count; the
+   full corpus must report 334,136 mentions in 186,226 posts. For timed runs,
+   use `--cpu-list`, `--warmup-seconds`, and `--min-efficiency`; a run that
+   fails the efficiency check must be retried, not reported.
 
 ## Continuous integration
 

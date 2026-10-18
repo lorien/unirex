@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Barrier;
 use std::time::{Duration, Instant};
 
-use exp_rurex::{Regex, Ucs};
+use exp_rurex::{Regex, Scratch, Ucs};
 use flate2::read::MultiGzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -67,7 +67,13 @@ struct Options {
     mode: Mode,
     limit: Option<usize>,
     repeat: usize,
+    warmup: usize,
+    warmup_seconds: f64,
+    min_efficiency: f64,
+    retries: usize,
     threads: usize,
+    cpu_list: Vec<usize>,
+    max_load: Option<f64>,
     pattern: String,
     json: Option<PathBuf>,
     expect_mentions: Option<usize>,
@@ -84,7 +90,13 @@ impl Default for Options {
             mode: Mode::Ucs,
             limit: None,
             repeat: 3,
+            warmup: 1,
+            warmup_seconds: 1.0,
+            min_efficiency: 0.90,
+            retries: 2,
             threads: 1,
+            cpu_list: Vec::new(),
+            max_load: None,
             pattern: DEFAULT_PATTERN.to_string(),
             json: None,
             expect_mentions: None,
@@ -94,6 +106,32 @@ impl Default for Options {
             help: false,
         }
     }
+}
+
+impl Options {
+    fn effective_threads(&self) -> usize {
+        if self.cpu_list.is_empty() {
+            self.threads
+        } else {
+            self.threads.min(self.cpu_list.len()).max(1)
+        }
+    }
+
+    fn sampled_cpus(&self) -> Vec<usize> {
+        if self.cpu_list.is_empty() {
+            vec![0]
+        } else {
+            self.cpu_list.clone()
+        }
+    }
+}
+
+struct EnvSample {
+    threads: usize,
+    load_before: f64,
+    load_after: f64,
+    freq_before_mhz: Vec<u64>,
+    freq_after_mhz: Vec<u64>,
 }
 
 fn main() {
@@ -115,6 +153,14 @@ fn run() -> Result<(), String> {
     if cfg!(debug_assertions) {
         eprintln!("warning: debug build; timings are not meaningful. Use --release.");
     }
+    if let Some(max_load) = opts.max_load {
+        let load = read_load();
+        if load > max_load {
+            return Err(format!(
+                "system load {load:.2} exceeds --max-load {max_load:.2}; retry when idle"
+            ));
+        }
+    }
 
     let (corpus_path, corpus_sha256) = resolve_corpus(&opts)?;
     let report = match opts.mode {
@@ -127,9 +173,28 @@ fn run() -> Result<(), String> {
                 corpus.posts.len(),
             )?;
             let re = Regex::new(&opts.pattern).map_err(|e| format!("pattern: {e}"))?;
-            let runs: Vec<Trial> = (0..opts.repeat)
-                .map(|_| scan_ucs(&re, &corpus, opts.threads))
-                .collect();
+            let threads = opts.effective_threads().min(corpus.posts.len().max(1));
+            let mut scratches: Vec<_> = (0..threads).map(|_| re.scratch()).collect();
+            let load_before = read_load();
+            warmup(
+                || {
+                    scan_ucs(&re, &corpus, &mut scratches, &opts.cpu_list);
+                },
+                &opts,
+            );
+            let freq_before_mhz = sample_freqs(&opts.sampled_cpus());
+            let runs = measure(
+                || scan_ucs(&re, &corpus, &mut scratches, &opts.cpu_list),
+                &opts,
+            )?;
+            let freq_after_mhz = sample_freqs(&opts.sampled_cpus());
+            let env = EnvSample {
+                threads,
+                load_before,
+                load_after: read_load(),
+                freq_before_mhz,
+                freq_after_mhz,
+            };
             validate_counts(
                 &opts,
                 runs[0].count,
@@ -152,6 +217,7 @@ fn run() -> Result<(), String> {
                     expected_posts_with: corpus.expected_posts_with,
                 },
                 &runs,
+                &env,
             )
         }
         Mode::Bytes => {
@@ -164,9 +230,24 @@ fn run() -> Result<(), String> {
             )?;
             let re =
                 regex::bytes::Regex::new(&opts.pattern).map_err(|e| format!("pattern: {e}"))?;
-            let runs: Vec<Trial> = (0..opts.repeat)
-                .map(|_| scan_bytes(&re, &corpus, opts.threads))
-                .collect();
+            let threads = opts.effective_threads().min(corpus.posts.len().max(1));
+            let load_before = read_load();
+            warmup(
+                || {
+                    scan_bytes(&re, &corpus, threads, &opts.cpu_list);
+                },
+                &opts,
+            );
+            let freq_before_mhz = sample_freqs(&opts.sampled_cpus());
+            let runs = measure(|| scan_bytes(&re, &corpus, threads, &opts.cpu_list), &opts)?;
+            let freq_after_mhz = sample_freqs(&opts.sampled_cpus());
+            let env = EnvSample {
+                threads,
+                load_before,
+                load_after: read_load(),
+                freq_before_mhz,
+                freq_after_mhz,
+            };
             validate_counts(
                 &opts,
                 runs[0].count,
@@ -189,6 +270,7 @@ fn run() -> Result<(), String> {
                     expected_posts_with: corpus.expected_posts_with,
                 },
                 &runs,
+                &env,
             )
         }
         Mode::Str => {
@@ -200,9 +282,24 @@ fn run() -> Result<(), String> {
                 corpus.posts.len(),
             )?;
             let re = regex::Regex::new(&opts.pattern).map_err(|e| format!("pattern: {e}"))?;
-            let runs: Vec<Trial> = (0..opts.repeat)
-                .map(|_| scan_str(&re, &corpus, opts.threads))
-                .collect();
+            let threads = opts.effective_threads().min(corpus.posts.len().max(1));
+            let load_before = read_load();
+            warmup(
+                || {
+                    scan_str(&re, &corpus, threads, &opts.cpu_list);
+                },
+                &opts,
+            );
+            let freq_before_mhz = sample_freqs(&opts.sampled_cpus());
+            let runs = measure(|| scan_str(&re, &corpus, threads, &opts.cpu_list), &opts)?;
+            let freq_after_mhz = sample_freqs(&opts.sampled_cpus());
+            let env = EnvSample {
+                threads,
+                load_before,
+                load_after: read_load(),
+                freq_before_mhz,
+                freq_after_mhz,
+            };
             validate_counts(
                 &opts,
                 runs[0].count,
@@ -225,6 +322,7 @@ fn run() -> Result<(), String> {
                     expected_posts_with: corpus.expected_posts_with,
                 },
                 &runs,
+                &env,
             )
         }
     };
@@ -241,6 +339,16 @@ fn run() -> Result<(), String> {
         report.min_s,
         report.ns_per_post,
         report.mb_per_s,
+    );
+    println!(
+        "cpu={:.6}s efficiency={:.2} load={:.2}->{:.2} freq={:?}->{:?} cores={:?}",
+        report.first_cpu_s,
+        report.cpu_efficiency,
+        report.load_before,
+        report.load_after,
+        report.freq_before_mhz,
+        report.freq_after_mhz,
+        report.worker_cores,
     );
     println!("{human}");
     if let Some(path) = &opts.json {
@@ -260,8 +368,14 @@ fn print_usage() {
            --corpus PATH        corpus .jsonl or .json.gz (overrides cache/download)\n\
            --mode MODE          ucs (default), bytes, str\n\
            --limit N            load only the first N posts\n\
-           --repeat N           timed runs (default 3; first run is cold)\n\
+           --repeat N           timed runs (default 3)\n\
+           --warmup N           minimum untimed warmup passes (default 1)\n\
+           --warmup-seconds F   minimum warmup duration (default 1.0)\n\
+           --min-efficiency F   discard runs below this CPU/wall ratio (default 0.90)\n\
+           --retries N          extra attempts after a discarded run (default 2)\n\
            --threads N          worker threads (default 1)\n\
+           --cpu-list LIST      pin workers, e.g. 2 or 0,2,4,6 or 0-3\n\
+           --max-load F         abort if 1-minute load is above F\n\
            --pattern PATTERN    pattern (default Telegram @username pattern)\n\
            --json PATH          write a JSON report\n\
            --expect-mentions N  extra correctness check\n\
@@ -308,6 +422,20 @@ fn parse_args() -> Result<Options, String> {
                 }
                 opts.repeat = value;
             }
+            "--warmup" => {
+                opts.warmup = next_value(&mut args, "--warmup")?
+                    .parse()
+                    .map_err(|_| "--warmup expects an integer".to_string())?;
+            }
+            "--warmup-seconds" => {
+                let value: f64 = next_value(&mut args, "--warmup-seconds")?
+                    .parse()
+                    .map_err(|_| "--warmup-seconds expects a number".to_string())?;
+                if value < 0.0 {
+                    return Err("--warmup-seconds must be non-negative".to_string());
+                }
+                opts.warmup_seconds = value;
+            }
             "--threads" => {
                 let value: usize = next_value(&mut args, "--threads")?
                     .parse()
@@ -316,6 +444,30 @@ fn parse_args() -> Result<Options, String> {
                     return Err("--threads must be greater than zero".to_string());
                 }
                 opts.threads = value;
+            }
+            "--cpu-list" => {
+                opts.cpu_list = parse_cpu_list(&next_value(&mut args, "--cpu-list")?)?;
+            }
+            "--min-efficiency" => {
+                let value: f64 = next_value(&mut args, "--min-efficiency")?
+                    .parse()
+                    .map_err(|_| "--min-efficiency expects a number".to_string())?;
+                if !(0.0..=1.0).contains(&value) {
+                    return Err("--min-efficiency must be between 0 and 1".to_string());
+                }
+                opts.min_efficiency = value;
+            }
+            "--retries" => {
+                opts.retries = next_value(&mut args, "--retries")?
+                    .parse()
+                    .map_err(|_| "--retries expects an integer".to_string())?;
+            }
+            "--max-load" => {
+                opts.max_load = Some(
+                    next_value(&mut args, "--max-load")?
+                        .parse()
+                        .map_err(|_| "--max-load expects a number".to_string())?,
+                );
             }
             "--pattern" => opts.pattern = next_value(&mut args, "--pattern")?,
             "--json" => opts.json = Some(PathBuf::from(next_value(&mut args, "--json")?)),
@@ -743,11 +895,14 @@ fn validate_counts(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Trial {
     count: usize,
     posts_with: usize,
     elapsed: Duration,
+    cpu: Duration,
+    cores: Vec<i32>,
+    efficiencies: Vec<f64>,
 }
 
 fn combine(trials: Vec<Trial>) -> Trial {
@@ -755,6 +910,60 @@ fn combine(trials: Vec<Trial>) -> Trial {
         count: trials.iter().map(|t| t.count).sum(),
         posts_with: trials.iter().map(|t| t.posts_with).sum(),
         elapsed: trials.iter().map(|t| t.elapsed).max().unwrap_or_default(),
+        cpu: trials.iter().map(|t| t.cpu).sum(),
+        cores: trials
+            .iter()
+            .flat_map(|t| t.cores.iter().copied())
+            .collect(),
+        efficiencies: trials
+            .iter()
+            .flat_map(|t| t.efficiencies.iter().copied())
+            .collect(),
+    }
+}
+
+fn measure<F: FnMut() -> Trial>(mut scan: F, opts: &Options) -> Result<Vec<Trial>, String> {
+    let mut runs = Vec::new();
+    let attempts_limit = opts.repeat.saturating_add(opts.retries);
+    let mut attempts = 0usize;
+    while runs.len() < opts.repeat && attempts < attempts_limit {
+        attempts += 1;
+        let trial = scan();
+        let efficiency = trial.efficiencies.iter().copied().fold(1.0_f64, f64::min);
+        if efficiency >= opts.min_efficiency {
+            runs.push(trial);
+        } else {
+            eprintln!(
+                "discarding run: CPU efficiency {efficiency:.2} below {:.2}; system load?",
+                opts.min_efficiency
+            );
+        }
+    }
+    if runs.is_empty() {
+        return Err(format!(
+            "no clean runs: per-worker CPU efficiency stayed below {:.2}; retry when idle",
+            opts.min_efficiency
+        ));
+    }
+    if runs.len() < opts.repeat {
+        eprintln!(
+            "warning: only {} clean runs out of requested {}",
+            runs.len(),
+            opts.repeat
+        );
+    }
+    Ok(runs)
+}
+
+fn warmup<F: FnMut()>(mut scan: F, opts: &Options) {
+    let deadline = Instant::now() + Duration::from_secs_f64(opts.warmup_seconds);
+    let mut passes = 0usize;
+    while passes < opts.warmup || Instant::now() < deadline {
+        scan();
+        passes += 1;
+        if passes > 100_000 {
+            break;
+        }
     }
 }
 
@@ -770,22 +979,29 @@ fn chunk_bounds(posts: usize, threads: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn scan_ucs(re: &Regex, corpus: &UcsCorpus, threads: usize) -> Trial {
-    let bounds = chunk_bounds(corpus.posts.len(), threads);
+fn scan_ucs(re: &Regex, corpus: &UcsCorpus, scratches: &mut [Scratch], cpus: &[usize]) -> Trial {
+    let bounds = chunk_bounds(corpus.posts.len(), scratches.len());
     let barrier = Barrier::new(bounds.len());
     let trials = std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(bounds.len());
-        for (start, end) in bounds {
+        let mut scratch_iter = scratches.iter_mut();
+        for (index, (start, end)) in bounds.into_iter().enumerate() {
+            let scratch = scratch_iter.next().expect("one scratch per worker");
+            let cpu = cpus.get(index).copied();
             let barrier = &barrier;
             handles.push(scope.spawn(move || {
-                let mut scratch = re.scratch();
+                if let Some(cpu) = cpu {
+                    pin_thread(cpu);
+                }
+                let core = current_cpu();
                 barrier.wait();
+                let cpu_start = thread_cpu_time();
                 let timer = Instant::now();
                 let mut count = 0;
                 let mut posts_with = 0;
                 for post in &corpus.posts[start..end] {
                     let mut matches = 0;
-                    for m in re.find_iter_with(&mut scratch, corpus.ucs(*post)) {
+                    for m in re.find_iter_with(scratch, corpus.ucs(*post)) {
                         matches += 1;
                         std::hint::black_box(m.end());
                     }
@@ -795,10 +1011,20 @@ fn scan_ucs(re: &Regex, corpus: &UcsCorpus, threads: usize) -> Trial {
                     }
                 }
                 std::hint::black_box(count);
+                let elapsed = timer.elapsed();
+                let cpu = thread_cpu_time().saturating_sub(cpu_start);
+                let efficiency = if elapsed.as_secs_f64() > 0.0 {
+                    cpu.as_secs_f64() / elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
                 Trial {
                     count,
                     posts_with,
-                    elapsed: timer.elapsed(),
+                    elapsed,
+                    cpu,
+                    cores: vec![core],
+                    efficiencies: vec![efficiency],
                 }
             }));
         }
@@ -810,16 +1036,27 @@ fn scan_ucs(re: &Regex, corpus: &UcsCorpus, threads: usize) -> Trial {
     combine(trials)
 }
 
-fn scan_bytes(re: &regex::bytes::Regex, corpus: &BytesCorpus, threads: usize) -> Trial {
+fn scan_bytes(
+    re: &regex::bytes::Regex,
+    corpus: &BytesCorpus,
+    threads: usize,
+    cpus: &[usize],
+) -> Trial {
     let bounds = chunk_bounds(corpus.posts.len(), threads);
     let barrier = Barrier::new(bounds.len());
     let data = corpus.data.as_bytes();
     let trials = std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(bounds.len());
-        for (start, end) in bounds {
+        for (index, (start, end)) in bounds.into_iter().enumerate() {
+            let cpu = cpus.get(index).copied();
             let barrier = &barrier;
             handles.push(scope.spawn(move || {
+                if let Some(cpu) = cpu {
+                    pin_thread(cpu);
+                }
+                let core = current_cpu();
                 barrier.wait();
+                let cpu_start = thread_cpu_time();
                 let timer = Instant::now();
                 let mut count = 0;
                 let mut posts_with = 0;
@@ -836,10 +1073,20 @@ fn scan_bytes(re: &regex::bytes::Regex, corpus: &BytesCorpus, threads: usize) ->
                     }
                 }
                 std::hint::black_box(count);
+                let elapsed = timer.elapsed();
+                let cpu = thread_cpu_time().saturating_sub(cpu_start);
+                let efficiency = if elapsed.as_secs_f64() > 0.0 {
+                    cpu.as_secs_f64() / elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
                 Trial {
                     count,
                     posts_with,
-                    elapsed: timer.elapsed(),
+                    elapsed,
+                    cpu,
+                    cores: vec![core],
+                    efficiencies: vec![efficiency],
                 }
             }));
         }
@@ -851,16 +1098,22 @@ fn scan_bytes(re: &regex::bytes::Regex, corpus: &BytesCorpus, threads: usize) ->
     combine(trials)
 }
 
-fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize) -> Trial {
+fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize, cpus: &[usize]) -> Trial {
     let bounds = chunk_bounds(corpus.posts.len(), threads);
     let barrier = Barrier::new(bounds.len());
     let data = corpus.data.as_str();
     let trials = std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(bounds.len());
-        for (start, end) in bounds {
+        for (index, (start, end)) in bounds.into_iter().enumerate() {
+            let cpu = cpus.get(index).copied();
             let barrier = &barrier;
             handles.push(scope.spawn(move || {
+                if let Some(cpu) = cpu {
+                    pin_thread(cpu);
+                }
+                let core = current_cpu();
                 barrier.wait();
+                let cpu_start = thread_cpu_time();
                 let timer = Instant::now();
                 let mut count = 0;
                 let mut posts_with = 0;
@@ -877,10 +1130,20 @@ fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize) -> Trial {
                     }
                 }
                 std::hint::black_box(count);
+                let elapsed = timer.elapsed();
+                let cpu = thread_cpu_time().saturating_sub(cpu_start);
+                let efficiency = if elapsed.as_secs_f64() > 0.0 {
+                    cpu.as_secs_f64() / elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
                 Trial {
                     count,
                     posts_with,
-                    elapsed: timer.elapsed(),
+                    elapsed,
+                    cpu,
+                    cores: vec![core],
+                    efficiencies: vec![efficiency],
                 }
             }));
         }
@@ -890,6 +1153,94 @@ fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize) -> Trial {
             .collect::<Vec<_>>()
     });
     combine(trials)
+}
+
+fn read_load() -> f64 {
+    fs::read_to_string("/proc/loadavg")
+        .ok()
+        .and_then(|value| value.split_whitespace().next()?.parse().ok())
+        .unwrap_or(0.0)
+}
+
+fn sample_freqs(cpus: &[usize]) -> Vec<u64> {
+    cpus.iter()
+        .filter_map(|cpu| {
+            fs::read_to_string(format!(
+                "/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq"
+            ))
+            .ok()?
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .map(|khz| khz / 1000)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn pin_thread(cpu: usize) {
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+        libc::CPU_ZERO(&mut set);
+        if cpu < libc::CPU_SETSIZE as usize {
+            libc::CPU_SET(cpu, &mut set);
+            libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn pin_thread(_cpu: usize) {}
+
+#[cfg(target_os = "linux")]
+fn current_cpu() -> i32 {
+    unsafe { libc::sched_getcpu() }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn current_cpu() -> i32 {
+    -1
+}
+
+#[cfg(target_os = "linux")]
+fn thread_cpu_time() -> Duration {
+    let mut value = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe {
+        libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut value);
+    }
+    Duration::new(value.tv_sec as u64, value.tv_nsec as u32)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn thread_cpu_time() -> Duration {
+    Duration::ZERO
+}
+
+fn parse_cpu_list(value: &str) -> Result<Vec<usize>, String> {
+    let mut cpus = Vec::new();
+    for part in value.split(',') {
+        let part = part.trim();
+        if let Some((start, end)) = part.split_once('-') {
+            let start: usize = start
+                .parse()
+                .map_err(|_| format!("invalid CPU range {part:?}"))?;
+            let end: usize = end
+                .parse()
+                .map_err(|_| format!("invalid CPU range {part:?}"))?;
+            if start > end {
+                return Err(format!("invalid CPU range {part:?}"));
+            }
+            cpus.extend(start..=end);
+        } else {
+            cpus.push(part.parse().map_err(|_| format!("invalid CPU {part:?}"))?);
+        }
+    }
+    cpus.sort_unstable();
+    cpus.dedup();
+    Ok(cpus)
 }
 
 struct CorpusShape {
@@ -911,6 +1262,13 @@ struct BenchReport {
     limit: Option<usize>,
     threads: usize,
     repeat: usize,
+    warmup: usize,
+    warmup_seconds: f64,
+    min_efficiency: f64,
+    retries: usize,
+    cpu_list: Vec<usize>,
+    worker_cores: Vec<i32>,
+    worker_efficiencies: Vec<f64>,
     posts: usize,
     utf8_bytes: usize,
     units: usize,
@@ -927,10 +1285,17 @@ struct BenchReport {
     expected_posts_with_mentions: usize,
     first_s: f64,
     runs_s: Vec<f64>,
+    first_cpu_s: f64,
+    runs_cpu_s: Vec<f64>,
+    cpu_efficiency: f64,
     median_s: f64,
     min_s: f64,
     ns_per_post: f64,
     mb_per_s: f64,
+    load_before: f64,
+    load_after: f64,
+    freq_before_mhz: Vec<u64>,
+    freq_after_mhz: Vec<u64>,
     cpu: String,
     os: String,
     rustc: String,
@@ -943,8 +1308,10 @@ fn build_report(
     mode: Mode,
     shape: CorpusShape,
     runs: &[Trial],
+    env: &EnvSample,
 ) -> BenchReport {
     let seconds: Vec<f64> = runs.iter().map(|run| run.elapsed.as_secs_f64()).collect();
+    let cpu_seconds: Vec<f64> = runs.iter().map(|run| run.cpu.as_secs_f64()).collect();
     let first_s = seconds[0];
     let median_s = median(&seconds);
     let min_s = seconds.iter().copied().fold(f64::INFINITY, f64::min);
@@ -959,14 +1326,27 @@ fn build_report(
     } else {
         0.0
     };
+    let first_cpu_s = cpu_seconds[0];
+    let cpu_efficiency = if first_s > 0.0 {
+        first_cpu_s / (first_s * env.threads as f64)
+    } else {
+        0.0
+    };
     BenchReport {
         mode: mode.as_str().to_string(),
         pattern: opts.pattern.clone(),
         corpus: corpus_path.display().to_string(),
         corpus_sha256,
         limit: opts.limit,
-        threads: opts.threads,
+        threads: env.threads,
         repeat: opts.repeat,
+        warmup: opts.warmup,
+        warmup_seconds: opts.warmup_seconds,
+        min_efficiency: opts.min_efficiency,
+        retries: opts.retries,
+        cpu_list: opts.cpu_list.clone(),
+        worker_cores: runs[0].cores.clone(),
+        worker_efficiencies: runs[0].efficiencies.clone(),
         posts,
         utf8_bytes: shape.utf8_bytes,
         units: shape.units,
@@ -983,10 +1363,17 @@ fn build_report(
         expected_posts_with_mentions: shape.expected_posts_with,
         first_s,
         runs_s: seconds,
+        first_cpu_s,
+        runs_cpu_s: cpu_seconds,
+        cpu_efficiency,
         median_s,
         min_s,
         ns_per_post,
         mb_per_s,
+        load_before: env.load_before,
+        load_after: env.load_after,
+        freq_before_mhz: env.freq_before_mhz.clone(),
+        freq_after_mhz: env.freq_after_mhz.clone(),
         cpu: cpu_name(),
         os: std::env::consts::OS.to_string(),
         rustc: rustc_version(),
@@ -1047,7 +1434,8 @@ fn self_test() -> Result<(), String> {
     }
 
     let re = Regex::new(DEFAULT_PATTERN).map_err(|e| format!("pattern: {e}"))?;
-    let ucs = scan_ucs(&re, &ucs_corpus, 2);
+    let mut scratches = vec![re.scratch(), re.scratch()];
+    let ucs = scan_ucs(&re, &ucs_corpus, &mut scratches, &[]);
     if ucs.count != 7 || ucs.posts_with != 6 {
         return Err(format!(
             "self-test ucs count {} posts {}",
@@ -1057,7 +1445,7 @@ fn self_test() -> Result<(), String> {
 
     let bytes_re =
         regex::bytes::Regex::new(DEFAULT_PATTERN).map_err(|e| format!("pattern: {e}"))?;
-    let bytes = scan_bytes(&bytes_re, &bytes_corpus, 2);
+    let bytes = scan_bytes(&bytes_re, &bytes_corpus, 2, &[]);
     if bytes.count != 7 || bytes.posts_with != 6 {
         return Err(format!(
             "self-test bytes count {} posts {}",
@@ -1066,7 +1454,7 @@ fn self_test() -> Result<(), String> {
     }
 
     let str_re = regex::Regex::new(DEFAULT_PATTERN).map_err(|e| format!("pattern: {e}"))?;
-    let text = scan_str(&str_re, &bytes_corpus, 2);
+    let text = scan_str(&str_re, &bytes_corpus, 2, &[]);
     if text.count != 7 || text.posts_with != 6 {
         return Err(format!(
             "self-test str count {} posts {}",

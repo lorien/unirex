@@ -80,9 +80,9 @@ cargo test
 cargo test --release
 python3 tools/python_diff.py --patterns 1000
 cargo run --release --example bench -- --self-test
-cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
+cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
 PYTHONPATH=var/py python3 tools/test_python_binding.py
-PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --repeat 1
+PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 ```
 
 The Python differential harness generates random patterns from the supported
@@ -116,7 +116,8 @@ Four threads:
 
 The DFA is 3.5x faster than the prefiltered PikeVM. It is about 2.1x slower
 than the bytes baseline at one thread and 1.8x slower at four threads. It does
-not beat the same-thread baseline.
+not beat the same-thread baseline. These gaps are provisional until a clean
+load-aware rerun.
 
 ## Python binding
 
@@ -151,11 +152,14 @@ rx.is_match("hello @alice123")
 
 End-to-end, cold fresh process, one thread, GIL, full corpus:
 
+These end-to-end numbers are also provisional; they predate CPU-time and
+efficiency accounting.
+
 - `exp_rurex`: median 0.598 s, minimum 0.596 s.
 - CPython `re`: median 0.501 s, minimum 0.490 s.
 
 The binding is correct, but it is about 1.2 times slower than CPython `re`.
-The DFA engine is the limiting factor; the next task is optimization.
+Rerun on an idle machine before using the gap for optimization decisions.
 
 ## Not yet implemented
 

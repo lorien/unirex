@@ -83,6 +83,10 @@ at decision time. The format is defined in
   result files.
 - Correctness checks run before timing. Every engine mode must match the
   independent naive count.
+- Timed runs pin workers, warm up, measure CPU time, and reject runs below the
+  per-worker efficiency threshold. Do not report contaminated runs.
+- Do not change the CPU governor as part of a benchmark. Record frequency and
+  load instead.
 - Report the machine, tool versions, command, thread count, repetition count,
   and raw numbers. Label synthetic corpora as synthetic.
 - Keep engine-only numbers separate from end-to-end Python numbers.

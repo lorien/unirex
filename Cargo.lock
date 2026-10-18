@@ -104,6 +104,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "flate2",
+ "libc",
  "memchr",
  "pyo3",
  "regex",

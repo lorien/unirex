@@ -219,8 +219,8 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
 End-to-end benchmark, full corpus, cold fresh process, one thread, GIL:
 `exp_rurex` was 0.596 s to 0.604 s per run, with a median of 0.598 s over five
 runs. CPython `re` was 0.490 s to 0.648 s, median 0.501 s. The binding works,
-but the engine is about 1.2 times slower than CPython `re`. See
-`benchmarks.md`.
+but the engine is about 1.2 times slower than CPython `re`. These numbers
+predate the load-aware protocol and are provisional. See `benchmarks.md`.
 
 ## Memory and safety
 

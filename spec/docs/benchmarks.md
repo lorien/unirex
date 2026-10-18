@@ -28,10 +28,20 @@ project only as data provenance; this benchmark does not import or run the
   protocol.
 - Each post is scanned exactly once per run, counting matches with
   `find_iter_with` and `black_box`.
-- The first run is cold; `--repeat N` adds warm runs. Report first, median,
-  minimum, nanoseconds per post, and MB/s.
-- `--threads N` splits posts into contiguous ranges. Each worker has its own
-  `Scratch`; wall time is the slowest worker. Default is 1 thread.
+- `--warmup N` and `--warmup-seconds F` run untimed passes before the measured
+  runs. Warmup ramps CPU frequency and builds DFA caches.
+- `--cpu-list` pins each worker to a CPU, for example `2` or `0,2,4,6`.
+  `--threads N` splits posts into contiguous ranges. Each worker has its own
+  `Scratch`; wall time is the slowest worker.
+- The runner records per-worker CPU time, core ID, CPU efficiency, load and
+  frequency. Any worker below `--min-efficiency` (default 0.90) causes the run
+  to be discarded and retried up to `--retries` times.
+- `--max-load F` aborts before warmup when the initial load average is above
+  `F`.
+- The runner does not change the CPU governor. It fails if it cannot obtain
+  the requested number of clean runs.
+- Report first, median, minimum, nanoseconds per post, MB/s, CPU time,
+  efficiency, load, and frequency.
 - An independent naive counter runs during loading, untimed. Every engine
   mode must match it. For the full corpus, 334,136 mentions in 186,226 posts
   is also asserted.
@@ -54,6 +64,19 @@ If the corpus is unavailable, a synthetic corpus may be used, but every
 result must be labeled synthetic.
 
 ## Results
+
+The numbers in this section were collected before the load-aware runner. They
+are wall-clock only and did not record CPU time, frequency, or contamination.
+Treat them as provisional. The current runner rejects contaminated runs and
+records the conditions; rerun on an idle machine before using the numbers for
+optimization decisions.
+
+Load-aware attempt on 2026-10-18: an external four-thread benchmark kept the
+machine at load near 3. The runner rejected all four-thread attempts and most
+one-thread bytes/str attempts. One UCS one-thread set produced five clean
+samples at a 0.429 s median with observed frequency 2.8 GHz to 3.0 GHz, which
+is not comparable to the earlier 0.360 s at higher frequency. No new official
+numbers are claimed until the machine is idle.
 
 Machine: Intel Core i5-8350U, 8 logical cores, Linux, Rust 1.97.1. Full
 corpus, engine-only Rust harness, `--repeat 3`, median reported.
@@ -97,9 +120,12 @@ It loads and compiles outside the timed window, then each worker scans its
 slice once after a barrier. It resolves the corpus the same way as the Rust
 harness and verifies 334,136 mentions in 186,226 posts.
 
-Use a fresh process per point for the cold protocol. The following are five
-fresh-process runs from this repository's own corpus cache, pinned to one CPU,
-one thread, GIL build, full corpus:
+These end-to-end numbers are also provisional: they were collected before
+CPU-time accounting and efficiency rejection were added.
+
+Use a fresh process per point. The following are five fresh-process runs from
+this repository's own corpus cache, pinned to one CPU, one thread, GIL build,
+full corpus:
 
 - `exp_rurex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
   minimum 0.596 s.
@@ -120,13 +146,13 @@ been tested.
 ## Commands
 
     cargo run --release --example bench -- --self-test
-    cargo run --release --example bench -- --mode ucs --limit 100000 --repeat 3
-    cargo run --release --example bench -- --mode ucs --repeat 3 --threads 4
-    cargo run --release --example bench -- --mode bytes --repeat 3
-    cargo run --release --example bench -- --mode bytes --repeat 3 --threads 4
-    cargo run --release --example bench -- --mode str --repeat 3 --threads 4
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --repeat 1
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine re --repeat 1
+    cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
+    cargo run --release --example bench -- --mode ucs --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    cargo run --release --example bench -- --mode ucs --threads 4 --cpu-list 0,1,2,3 --warmup-seconds 2 --repeat 5
+    cargo run --release --example bench -- --mode bytes --cpu-list 2 --warmup-seconds 2 --repeat 5
+    cargo run --release --example bench -- --mode str --cpu-list 2 --warmup-seconds 2 --repeat 5
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine re --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 
 Add `--json var/bench-results/<name>.json` to keep raw results. Never commit
 the corpus or raw result files.

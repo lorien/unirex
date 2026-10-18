@@ -104,7 +104,59 @@ def compile_pattern(engine: str, pattern: str):
     return module.compile(pattern)
 
 
-def single_point(rx, texts: list[str], threads: int):
+def read_load() -> float:
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as stream:
+            return float(stream.read().split()[0])
+    except OSError:
+        return 0.0
+
+
+def read_freq(cpu: int) -> int | None:
+    try:
+        with open(
+            f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq",
+            encoding="utf-8",
+        ) as stream:
+            return int(stream.read().strip()) // 1000
+    except (OSError, ValueError):
+        return None
+
+
+def parse_cpu_list(value: str) -> list[int]:
+    result = []
+    for part in value.split(","):
+        part = part.strip()
+        if "-" in part:
+            start, end = (int(item) for item in part.split("-", 1))
+            if start > end:
+                raise ValueError(f"invalid CPU range {part!r}")
+            result.extend(range(start, end + 1))
+        else:
+            result.append(int(part))
+    return sorted(set(result))
+
+
+def pin_current(cpu: int) -> None:
+    try:
+        os.sched_setaffinity(0, {cpu})
+    except (AttributeError, OSError):
+        pass
+
+
+def current_cpu() -> int:
+    try:
+        path = f"/proc/self/task/{threading.get_native_id()}/stat"
+        with open(path, encoding="utf-8") as stream:
+            fields = stream.read().split()
+        return int(fields[38])
+    except (OSError, ValueError, AttributeError):
+        return -1
+
+
+def single_point(rx, texts: list[str], threads: int, cpus: list[int]):
+    if cpus:
+        threads = max(1, min(threads, len(cpus)))
     chunk_size = (len(texts) + threads - 1) // threads
     chunks = [
         texts[index * chunk_size:(index + 1) * chunk_size]
@@ -114,10 +166,16 @@ def single_point(rx, texts: list[str], threads: int):
     walls = [0.0] * threads
     counts = [0] * threads
     posts_with = [0] * threads
+    thread_cpu = [0.0] * threads
+    cores = [-1] * threads
 
     def work(index: int):
         part = chunks[index]
+        if cpus:
+            pin_current(cpus[index])
+        cores[index] = current_cpu()
         barrier.wait()
+        cpu_start = time.thread_time()
         start = time.perf_counter()
         mentions = 0
         with_matches = 0
@@ -127,6 +185,7 @@ def single_point(rx, texts: list[str], threads: int):
             if found:
                 with_matches += 1
         walls[index] = time.perf_counter() - start
+        thread_cpu[index] = time.thread_time() - cpu_start
         counts[index] = mentions
         posts_with[index] = with_matches
 
@@ -135,7 +194,14 @@ def single_point(rx, texts: list[str], threads: int):
         worker.start()
     for worker in workers:
         worker.join()
-    return max(walls), sum(counts), sum(posts_with)
+    return (
+        max(walls),
+        sum(counts),
+        sum(posts_with),
+        sum(thread_cpu),
+        cores,
+        threads,
+    )
 
 
 def cpu_name() -> str:
@@ -155,22 +221,68 @@ def main() -> int:
     parser.add_argument("--corpus", type=Path)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--warmup", type=int, default=1)
+    parser.add_argument("--warmup-seconds", type=float, default=1.0)
+    parser.add_argument("--min-efficiency", type=float, default=0.90)
+    parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--cpu-list")
+    parser.add_argument("--max-load", type=float)
     parser.add_argument("--pattern", default=PATTERN)
     parser.add_argument("--json", type=Path)
     args = parser.parse_args()
-    if args.repeat < 1 or args.threads < 1:
-        raise SystemExit("--repeat and --threads must be positive")
+    if args.repeat < 1 or args.warmup < 0 or args.warmup_seconds < 0 or args.threads < 1:
+        raise SystemExit("--repeat and --threads must be positive; warmup values must be non-negative")
+    cpus = parse_cpu_list(args.cpu_list) if args.cpu_list else []
+    load_before = read_load()
+    if args.max_load is not None and load_before > args.max_load:
+        raise SystemExit(
+            f"load {load_before:.2f} exceeds --max-load {args.max_load:.2f}; retry when idle"
+        )
 
     path = resolve_corpus(args.corpus)
     texts = load_texts(path, args.limit)
     rx = compile_pattern(args.engine, args.pattern)
+    sampled_cpus = cpus or [0]
+    warmup_deadline = time.perf_counter() + args.warmup_seconds
+    warmup_passes = 0
+    while warmup_passes < args.warmup or time.perf_counter() < warmup_deadline:
+        single_point(rx, texts, args.threads, cpus)
+        warmup_passes += 1
+        if warmup_passes > 100_000:
+            break
+    freq_before = [value for cpu in sampled_cpus if (value := read_freq(cpu)) is not None]
     runs = []
-    last = None
-    for _ in range(args.repeat):
-        last = single_point(rx, texts, args.threads)
-        runs.append(last)
-    first_wall, mentions, posts_with = runs[0]
+    discarded = 0
+    attempts = 0
+    process_cpu_start = time.process_time()
+    while len(runs) < args.repeat and attempts < args.repeat + args.retries:
+        attempts += 1
+        point = single_point(rx, texts, args.threads, cpus)
+        wall = point[0]
+        cpu = point[3]
+        efficiency = cpu / wall if wall > 0 else 0.0
+        if efficiency >= args.min_efficiency:
+            runs.append(point)
+        else:
+            discarded += 1
+            print(
+                f"discarding run: CPU efficiency {efficiency:.2} "
+                f"below {args.min_efficiency:.2}; system load?",
+                file=sys.stderr,
+            )
+    process_cpu = time.process_time() - process_cpu_start
+    if not runs:
+        raise SystemExit(
+            f"no clean runs: CPU efficiency stayed below {args.min_efficiency:.2}; retry when idle"
+        )
+    if len(runs) < args.repeat:
+        print(
+            f"warning: only {len(runs)} clean runs out of requested {args.repeat}",
+            file=sys.stderr,
+        )
+    freq_after = [value for cpu in sampled_cpus if (value := read_freq(cpu)) is not None]
+    first_wall, mentions, posts_with, thread_cpu, cores, threads = runs[0]
     walls = [run[0] for run in runs]
     median = statistics.median(walls)
     if args.limit is None:
@@ -182,24 +294,43 @@ def main() -> int:
     result = {
         "engine": args.engine,
         "pattern": args.pattern,
-        "threads": args.threads,
+        "threads": threads,
         "repeat": args.repeat,
+        "warmup": args.warmup,
+        "warmup_passes": warmup_passes,
+        "warmup_seconds": args.warmup_seconds,
+        "min_efficiency": args.min_efficiency,
+        "retries": args.retries,
+        "attempts": attempts,
+        "discarded_runs": discarded,
+        "cpu_list": cpus,
+        "worker_cores": cores,
         "limit": args.limit,
         "posts": len(texts),
         "mentions": mentions,
         "posts_with_mentions": posts_with,
         "first_s": first_wall,
         "runs_s": walls,
+        "first_cpu_s": thread_cpu,
+        "process_cpu_s": process_cpu,
+        "cpu_efficiency": (thread_cpu / first_wall) if first_wall > 0 else 0.0,
         "median_s": median,
         "min_s": min(walls),
+        "load_before": load_before,
+        "load_after": read_load(),
+        "freq_before_mhz": freq_before,
+        "freq_after_mhz": freq_after,
         "ns_per_post": (median * 1e9 / len(texts)) if texts else 0.0,
         "cpu": cpu_name(),
         "python": sys.version.split()[0],
     }
     print(
-        f"engine={args.engine} threads={args.threads} posts={len(texts)} "
+        f"engine={args.engine} threads={threads} posts={len(texts)} "
         f"mentions={mentions} first={first_wall:.6f}s median={median:.6f}s "
-        f"min={min(walls):.6f}s"
+        f"min={min(walls):.6f}s cpu={thread_cpu:.6f}s "
+        f"efficiency={thread_cpu / first_wall if first_wall else 0:.2f} "
+        f"load={load_before:.2f}->{read_load():.2f} "
+        f"freq={freq_before}->{freq_after} cores={cores}"
     )
     if args.json:
         args.json.write_text(json.dumps(result, indent=2))
