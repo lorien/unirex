@@ -15,6 +15,21 @@ The corpus URL is a public release asset. The URL lives under the `rurex`
 project only as data provenance; this benchmark does not import or run the
 `rurex` engine.
 
+## Published report
+
+`tools/telegram_benchmark.py` is the full matrix entry point. It holds
+`/tmp/core4.lock`, runs the engine-only modes and the Python binding at 1 to
+4 workers, writes JSON and a manifest under `var/bench-results/telegram/`, and
+then calls `tools/telegram_report.py`. The renderer writes the tracked
+[Telegram report](../../docs/telegram-benchmark.md) plus SVG chart assets; the
+self-contained `docs/telegram-benchmark.html` twin is generated and
+gitignored. Raw JSON is never committed.
+
+Use `--from-results` to rerender without rerunning, or
+`--results-dir var/bench-results/<name>` to render an existing matrix. The
+report validates that every expected point is present and that all full-corpus
+counts match.
+
 ## Modes
 
 - `ucs`: this engine over the actual CPython kind of each post (UCS-1, UCS-2,
@@ -80,37 +95,37 @@ result must be labeled synthetic.
 Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
 Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
 CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
-Governor stayed `powersave`, turbo enabled. Frequency was 4.6 GHz to 4.8 GHz.
-Load was 1.05 to 1.47 from other work, but per-worker efficiency stayed at 0.92
-to 1.0. `/tmp/core4.lock` was held for the whole matrix.
+Governor stayed `powersave`, turbo enabled. Engine frequency was 4.5 GHz to
+4.8 GHz. Load was 0.09 to 1.04 from other work, but per-worker efficiency
+stayed at 1.00. `/tmp/core4.lock` was held for the whole matrix.
 
 Engine-only medians, full corpus:
 
-- 1 thread: UCS 0.0699 s, Rust `regex` bytes 0.0716 s, str 0.0711 s.
-- 2 threads: UCS 0.0393 s, bytes 0.0381 s, str 0.0376 s.
-- 3 threads: UCS 0.0299 s, bytes 0.0265 s, str 0.0267 s.
-- 4 threads: UCS 0.0261 s, bytes 0.0210 s, str 0.0210 s.
+- 1 thread: UCS 0.0689 s, Rust `regex` bytes 0.0715 s, str 0.0715 s.
+- 2 threads: UCS 0.0388 s, bytes 0.0380 s, str 0.0376 s.
+- 3 threads: UCS 0.0296 s, bytes 0.0270 s, str 0.0271 s.
+- 4 threads: UCS 0.0257 s, bytes 0.0209 s, str 0.0212 s.
 
-UCS scales 2.68 times from 1 to 4 threads; bytes scales 3.41 times. UCS is
-slightly faster than bytes at one thread (about 2 percent) and 1.24 times
-slower at four. The one-thread result is the parity target; four-thread UCS
-scaling is limited by each worker scanning wider UCS storage and keeping its
-own DFA cache.
+UCS scales 2.68 times from 1 to 4 threads; bytes scales 3.43 times. UCS is
+about 3.6 percent faster than bytes at one thread and 1.23 times slower at
+four. The one-thread result is the parity target; four-thread UCS scaling is
+limited by each worker scanning wider UCS storage and keeping its own DFA
+cache.
 
 End-to-end Python, same CPU lists, GIL:
 
-- 1 thread: `exp_rurex` 0.1884 s median, 0.1835 s minimum; CPython `re`
-  0.1914 s median, 0.1913 s minimum.
-- 2 threads: `exp_rurex` 0.1735 s median, 0.1658 s minimum; `re` 0.1907 s
-  median, 0.1877 s minimum.
-- 3 threads: `exp_rurex` 0.1880 s median, 0.1657 s minimum; `re` 0.1906 s
-  median, 0.1816 s minimum.
-- 4 threads: `exp_rurex` 0.1838 s median, 0.1775 s minimum; `re` 0.1879 s
-  median, 0.1834 s minimum.
+- 1 thread: `exp_rurex` 0.1887 s median, 0.1838 s minimum; CPython `re`
+  0.1912 s median, 0.1905 s minimum.
+- 2 threads: `exp_rurex` 0.1799 s median, 0.1443 s minimum; `re` 0.1874 s
+  median, 0.1862 s minimum.
+- 3 threads: `exp_rurex` 0.1897 s median, 0.1874 s minimum; `re` 0.1889 s
+  median, 0.1854 s minimum.
+- 4 threads: `exp_rurex` 0.1660 s median, 0.1599 s minimum; `re` 0.1888 s
+  median, 0.1782 s minimum.
 
 The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
-is the end-to-end target. `exp_rurex` is 1.6 percent faster than CPython `re`
-at the median and 4.1 percent faster at the minimum. The 2-4 thread medians
+is the end-to-end target. `exp_rurex` is 1.3 percent faster than CPython `re`
+at the median and 3.5 percent faster at the minimum. The 2-4 thread medians
 are noisy because the Python runs do not keep the cores at a stable frequency;
 they are reported for completeness, not as scaling evidence. This CPU is much
 faster than the original laptop baseline, and no `rurex` engine was run.
@@ -203,6 +218,10 @@ been tested.
     cargo run --release --example bench -- --mode str --cpu-list 2 --warmup-seconds 2 --repeat 5
     PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
     PYTHONPATH=var/py python3 tools/bench_python.py --engine re --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
+    python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 Add `--json var/bench-results/<name>.json` to keep raw results. Never commit
-the corpus or raw result files.
+the corpus or raw result files. The full matrix runner writes to
+`var/bench-results/telegram/` and then renders the tracked report; use
+`--from-results` to rerender without rerunning.

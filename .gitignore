@@ -3,6 +3,7 @@
 
 # Local scratch data and generated artifacts
 /var/
+/docs/telegram-benchmark.html
 
 # Python
 __pycache__/

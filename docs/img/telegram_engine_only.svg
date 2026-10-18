@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-label="Telegram @mentions: engine only">
+<rect width="100%" height="100%" fill="white"/>
+<text x="82" y="34" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#1f2328">Telegram @mentions: engine only</text>
+<line x1="82" y1="452.0" x2="730" y2="452.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="70" y="456.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0</text>
+<line x1="82" y1="355.0" x2="730" y2="355.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="70" y="359.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0.02</text>
+<line x1="82" y1="258.0" x2="730" y2="258.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="70" y="262.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0.04</text>
+<line x1="82" y1="161.0" x2="730" y2="161.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="70" y="165.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0.06</text>
+<line x1="82" y1="64.0" x2="730" y2="64.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="70" y="68.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0.08</text>
+<line x1="82" y1="452" x2="730" y2="452" stroke="#666666" stroke-width="1.4"/>
+<line x1="82" y1="64" x2="82" y2="452" stroke="#666666" stroke-width="1.4"/>
+<line x1="82.0" y1="452" x2="82.0" y2="458" stroke="#666666" stroke-width="1"/>
+<text x="82.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">1</text>
+<line x1="298.0" y1="452" x2="298.0" y2="458" stroke="#666666" stroke-width="1"/>
+<text x="298.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">2</text>
+<line x1="514.0" y1="452" x2="514.0" y2="458" stroke="#666666" stroke-width="1"/>
+<text x="514.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">3</text>
+<line x1="730.0" y1="452" x2="730.0" y2="458" stroke="#666666" stroke-width="1"/>
+<text x="730.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">4</text>
+<polyline points="82.0,117.7 298.0,263.8 514.0,308.7 730.0,327.1" fill="none" stroke="#CE422B" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="82.0" cy="117.7" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="298.0" cy="263.8" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="514.0" cy="308.7" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="730.0" cy="327.1" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<polyline points="82.0,105.1 298.0,267.6 514.0,320.9 730.0,350.7" fill="none" stroke="#4C72B0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 4"/>
+<circle cx="82.0" cy="105.1" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="298.0" cy="267.6" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="514.0" cy="320.9" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="730.0" cy="350.7" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<polyline points="82.0,105.3 298.0,269.8 514.0,320.5 730.0,349.0" fill="none" stroke="#55A868" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="2 4"/>
+<circle cx="82.0" cy="105.3" r="4.2" fill="white" stroke="#55A868" stroke-width="2.2"/>
+<circle cx="298.0" cy="269.8" r="4.2" fill="white" stroke="#55A868" stroke-width="2.2"/>
+<circle cx="514.0" cy="320.5" r="4.2" fill="white" stroke="#55A868" stroke-width="2.2"/>
+<circle cx="730.0" cy="349.0" r="4.2" fill="white" stroke="#55A868" stroke-width="2.2"/>
+<line x1="756" y1="78" x2="788" y2="78" stroke="#CE422B" stroke-width="2.6"/>
+<circle cx="772" cy="78" r="4" fill="white" stroke="#CE422B" stroke-width="2"/>
+<text x="798" y="82" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">exp_rurex UCS</text>
+<line x1="756" y1="103" x2="788" y2="103" stroke="#4C72B0" stroke-width="2.6" stroke-dasharray="7 4"/>
+<circle cx="772" cy="103" r="4" fill="white" stroke="#4C72B0" stroke-width="2"/>
+<text x="798" y="107" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">Rust regex bytes</text>
+<line x1="756" y1="128" x2="788" y2="128" stroke="#55A868" stroke-width="2.6" stroke-dasharray="2 4"/>
+<circle cx="772" cy="128" r="4" fill="white" stroke="#55A868" stroke-width="2"/>
+<text x="798" y="132" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">Rust regex str</text>
+<text x="406.0" y="502" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">worker threads</text>
+<text x="18" y="258.0" text-anchor="middle" transform="rotate(-90 18 258.0)" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">wall time for 1M posts (s)</text>
+</svg>

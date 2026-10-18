@@ -6,7 +6,7 @@ Milestones 1, 3, 4, and 5 are implemented: a standalone crate with a strict
 Python-dialect subset, a Thompson program, a group-0 PikeVM, a unit-wide
 first-unit prefilter, a lazy DFA over UCS-1, UCS-2, and UCS-4, and a PyO3
 binding. On the Telegram benchmark the one-thread end-to-end time is at parity
-with CPython `re` (0.188 s versus 0.191 s on `regexus`). Captures and the
+with CPython `re` (0.189 s versus 0.191 s on `regexus`). Captures and the
 remaining Python classes and flags remain.
 
 ## Compilation pipeline
@@ -167,7 +167,7 @@ ADR-0015.
 The prefilter is an optimization only. A false negative is a correctness bug,
 so uncertain extraction disables it. The full benchmark improved from 5.424 s
 to 1.266 s at one thread before the DFA; the unit-wide scan and DFA together
-bring the one-thread engine time to 0.0699 s on `regexus`. See
+bring the one-thread engine time to 0.0689 s on `regexus`. See
 `benchmarks.md`, ADR-0010, and ADR-0015.
 
 ## Lazy DFA
@@ -203,9 +203,9 @@ the DFA scans forward from each candidate.
 The local benchmark improved from 1.266 s to 0.360 s at one thread. After
 caching initial DFA states, flattening transition rows, adding the match-flag
 array, and switching the prefilter to a unit-wide scan, the remote `regexus`
-benchmark reached 0.0699 s at one thread and 0.0261 s at four. Rust `regex`
-bytes is 0.0716 s at one thread and 0.0210 s at four. UCS is slightly faster
-than bytes at one thread, but scales less well at four because each worker
+benchmark reached 0.0689 s at one thread and 0.0257 s at four. Rust `regex`
+bytes is 0.0715 s at one thread and 0.0209 s at four. UCS is slightly faster
+than bytes at one thread, but 1.23 times slower at four because each worker
 scans wider UCS storage and keeps its own DFA cache. See `benchmarks.md`.
 
 ## Python binding
@@ -236,8 +236,8 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   not `re.findall`'s group tuples.
 
 End-to-end benchmark on `regexus`, full corpus, one thread, GIL:
-`exp_rurex` was 0.1884 s median, 0.1835 s minimum; CPython `re` was 0.1914 s
-median, 0.1913 s minimum. The engine is now at parity with, and slightly
+`exp_rurex` was 0.1887 s median, 0.1838 s minimum; CPython `re` was 0.1912 s
+median, 0.1905 s minimum. The engine is now at parity with, and slightly
 faster than, CPython `re` on this benchmark. GIL threads 2-4 do not scale
 meaningfully. See `benchmarks.md`.
 

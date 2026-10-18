@@ -394,6 +394,7 @@ def main() -> int:
         "ns_per_post": (median * 1e9 / len(texts)) if texts else 0.0,
         "cpu": cpu_name(),
         "python": sys.version.split()[0],
+        "gil_enabled": bool(getattr(sys, "_is_gil_enabled", lambda: True)()),
         "lock": None if args.no_lock else str(args.lock),
     }
     print(

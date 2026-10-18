@@ -103,6 +103,10 @@ Milestones 1, 3, 4, and 5 are implemented. The current layout is:
 - `tools/python_diff.py` — randomized comparison against CPython `re`.
 - `tools/bench_python.py` — end-to-end Python benchmark.
 - `tools/test_python_binding.py` — binding smoke test against `re`.
+- `tools/telegram_benchmark.py` — full Telegram matrix and report trigger.
+- `tools/telegram_report.py` — Markdown, SVG chart, and HTML report renderer.
+- `docs/telegram-benchmark.md` — generated public Telegram benchmark report.
+- `docs/img/` — generated SVG chart assets for that report.
 - `var/` — gitignored corpus cache, raw benchmark results, and local
   artifacts.
 

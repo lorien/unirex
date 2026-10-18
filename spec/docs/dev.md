@@ -52,6 +52,19 @@ Python binding:
     python3 tools/test_python_binding.py
     python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 
+Full Telegram matrix and report:
+
+    cargo build --release --example bench
+    cargo build --release --features extension-module
+    mkdir -p var/py
+    cp target/release/libexp_rurex.so var/py/exp_rurex.so
+    python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
+    python3 tools/telegram_report.py --results-dir var/bench-results/telegram
+
+The first command writes `docs/telegram-benchmark.md`, the SVG charts under
+`docs/img/`, and the gitignored `docs/telegram-benchmark.html`. Raw JSON stays
+under `var/bench-results/telegram/`.
+
 For a Cargo-only build, run `cargo build --release --features extension-module`
 and put `target/release/libexp_rurex.so` on `PYTHONPATH` as
 `exp_rurex.so`. The `pyproject.toml` uses maturin with the `extension-module`

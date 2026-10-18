@@ -44,7 +44,12 @@ against CPython `re`.
 9. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
    untimed, compiles once, and times `findall` per post. It verifies the full
    mention counts. The full corpus is not part of ordinary CI.
-10. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+10. **Report rendering.** `tools/telegram_report.py` reads a completed matrix
+    from `var/bench-results/`, checks that every expected point and full-corpus
+    count is present, and writes the tracked Markdown report, the SVG charts,
+    and the gitignored HTML twin. It is not part of ordinary CI because the
+    full matrix is too large; it is run after a matrix completes.
+11. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands
@@ -62,6 +67,7 @@ Run from the repository root:
     cargo build --release --features extension-module
     PYTHONPATH=var/py python3 tools/test_python_binding.py
     PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
+    python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 Timing assertions use release builds. A debug-build timing test is not
 meaningful and must not gate CI. The Python harness needs a `python3` with
