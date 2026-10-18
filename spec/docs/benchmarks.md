@@ -81,34 +81,39 @@ Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
 Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
 CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
 Governor stayed `powersave`, turbo enabled. Frequency was 4.6 GHz to 4.8 GHz.
-Load was 0.4 to 1.5 from other work, but per-worker efficiency stayed at 0.93
+Load was 1.05 to 1.47 from other work, but per-worker efficiency stayed at 0.92
 to 1.0. `/tmp/core4.lock` was held for the whole matrix.
 
 Engine-only medians, full corpus:
 
-- 1 thread: UCS 0.1322 s, Rust `regex` bytes 0.0712 s, str 0.0713 s.
-- 2 threads: UCS 0.0689 s, bytes 0.0380 s, str 0.0380 s.
-- 3 threads: UCS 0.0469 s, bytes 0.0268 s, str 0.0267 s.
-- 4 threads: UCS 0.0366 s, bytes 0.0210 s, str 0.0211 s.
+- 1 thread: UCS 0.0699 s, Rust `regex` bytes 0.0716 s, str 0.0711 s.
+- 2 threads: UCS 0.0393 s, bytes 0.0381 s, str 0.0376 s.
+- 3 threads: UCS 0.0299 s, bytes 0.0265 s, str 0.0267 s.
+- 4 threads: UCS 0.0261 s, bytes 0.0210 s, str 0.0210 s.
 
-UCS scales 3.61 times from 1 to 4 threads; bytes scales 3.39 times. UCS is
-1.86 times slower than bytes at one thread and 1.74 times slower at four
-threads. This is after caching initial DFA states and replacing the transition
-hash map with dense per-state rows.
+UCS scales 2.68 times from 1 to 4 threads; bytes scales 3.41 times. UCS is
+slightly faster than bytes at one thread (about 2 percent) and 1.24 times
+slower at four. The one-thread result is the parity target; four-thread UCS
+scaling is limited by each worker scanning wider UCS storage and keeping its
+own DFA cache.
 
 End-to-end Python, same CPU lists, GIL:
 
-- 1 thread: `exp_rurex` 0.2308 s median, 0.2289 s minimum; CPython `re`
-  0.1914 s median, 0.1903 s minimum.
-- 2 threads: `exp_rurex` 0.2288 s; `re` 0.1957 s.
-- 3 threads: `exp_rurex` 0.2307 s; `re` 0.3906 s.
-- 4 threads: `exp_rurex` 0.3289 s; `re` 0.4508 s.
+- 1 thread: `exp_rurex` 0.1884 s median, 0.1835 s minimum; CPython `re`
+  0.1914 s median, 0.1913 s minimum.
+- 2 threads: `exp_rurex` 0.1735 s median, 0.1658 s minimum; `re` 0.1907 s
+  median, 0.1877 s minimum.
+- 3 threads: `exp_rurex` 0.1880 s median, 0.1657 s minimum; `re` 0.1906 s
+  median, 0.1816 s minimum.
+- 4 threads: `exp_rurex` 0.1838 s median, 0.1775 s minimum; `re` 0.1879 s
+  median, 0.1834 s minimum.
 
-The GIL prevents scaling beyond one thread; the 1-thread result is the
-meaningful end-to-end number. `exp_rurex` is about 1.21 times slower than
-CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but
-this CPU is much faster than the original laptop baseline, and no `rurex`
-engine was run.
+The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
+is the end-to-end target. `exp_rurex` is 1.6 percent faster than CPython `re`
+at the median and 4.1 percent faster at the minimum. The 2-4 thread medians
+are noisy because the Python runs do not keep the cores at a stable frequency;
+they are reported for completeness, not as scaling evidence. This CPU is much
+faster than the original laptop baseline, and no `rurex` engine was run.
 
 ## Historical laptop results
 

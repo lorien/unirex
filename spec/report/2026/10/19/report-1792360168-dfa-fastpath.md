@@ -61,18 +61,23 @@ End-to-end Python, GIL:
 
 ### Spec/ADR amendments
 
-- [open] Engine-only UCS is still 1.86x slower than Rust `regex` bytes and
-  end-to-end is 1.21x slower than `re`. Further optimization is optional; the
-  remaining likely cost is per-candidate DFA stepping and the first-unit scan.
+- [acted] Engine-only UCS is still 1.86x slower than Rust `regex` bytes and
+  end-to-end is 1.21x slower than `re`. Resolved by the unit-wide prefilter,
+  flat DFA transitions, and direct result-list construction: engine-only UCS
+  is now 0.0699 s versus bytes 0.0716 s, and end-to-end is 0.1884 s versus
+  `re` 0.1914 s on `regexus`.
 - [open] Add process-based Python for many-core end-to-end runs.
 - [open] Add per-kind engine timing.
 - [open] Verify CPython 3.10-3.15 and free-threaded 3.14t.
 
 ### Future-task notes
 
-- [open] If further DFA work is chosen, profile candidate count, DFA steps,
+- [acted] If further DFA work is chosen, profile candidate count, DFA steps,
   transition hits and misses before changing the representation again.
-- [open] Re-run the remote matrix after any DFA change.
+  Profiling showed the first-unit scan dominated; the prefilter and DFA
+  hot-loop changes were based on those measurements.
+- [acted] Re-run the remote matrix after any DFA change. Re-ran the full
+  engine and Python matrix on `regexus` under `/tmp/core4.lock`.
 - [open] Keep the `/tmp/core4.lock` lease and first-four-P-core placement.
 
 ### Tooling/process

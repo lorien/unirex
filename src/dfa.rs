@@ -52,8 +52,9 @@ pub(crate) struct Cache {
     representatives: Vec<u32>,
     num_classes: usize,
     states: Vec<StateData>,
+    matched: Vec<bool>,
     index: HashMap<StateData, usize>,
-    transitions: Vec<Vec<u32>>,
+    transitions: Vec<u32>,
     initial: [Option<usize>; 4],
     overflowed: bool,
     limit: usize,
@@ -82,6 +83,7 @@ impl Cache {
             representatives,
             num_classes: class_count,
             states: Vec::new(),
+            matched: Vec::new(),
             index: HashMap::new(),
             transitions: Vec::new(),
             initial: [None; 4],
@@ -99,6 +101,7 @@ impl Cache {
         Some(cache)
     }
 
+    #[inline]
     fn class_id(&self, kind: UcsKind, unit: u32) -> Option<u16> {
         let index = usize::try_from(unit).ok()?;
         match kind {
@@ -113,9 +116,11 @@ impl Cache {
         self.initial[index]
     }
 
+    #[inline]
     fn transition(&mut self, program: &Program, state_id: usize, class_id: u16) -> Option<usize> {
         let class = usize::from(class_id);
-        let cached = self.transitions[state_id][class];
+        let cell = state_id * self.num_classes + class;
+        let cached = self.transitions[cell];
         if cached != UNKNOWN {
             return if cached == DEAD {
                 None
@@ -139,7 +144,7 @@ impl Cache {
             let state = closure(program, &seeds, false, false);
             self.intern(state)
         };
-        self.transitions[state_id][class] = next.map_or(DEAD, |id| id as u32);
+        self.transitions[cell] = next.map_or(DEAD, |id| id as u32);
         next
     }
 
@@ -170,9 +175,11 @@ impl Cache {
             return None;
         }
         let id = self.states.len();
+        self.matched.push(state.matched);
         self.index.insert(state.clone(), id);
         self.states.push(state);
-        self.transitions.push(vec![UNKNOWN; self.num_classes]);
+        self.transitions
+            .extend(std::iter::repeat_n(UNKNOWN, self.num_classes));
         Some(id)
     }
 
@@ -282,9 +289,12 @@ pub(crate) fn find_candidates<U: Unit>(
     let Some(first) = program.first.as_ref() else {
         return FindResult::NoMatch;
     };
+    let Some(scan) = first.scan::<U>() else {
+        return FindResult::NoMatch;
+    };
     let mut pos = search_start;
     loop {
-        let Some(candidate) = first.find_next(hay, pos) else {
+        let Some(candidate) = scan.find_next(hay, pos) else {
             return FindResult::NoMatch;
         };
         match find_at(program, cache, hay, candidate, retry_nonempty_at) {
@@ -306,7 +316,7 @@ fn find_at<U: Unit>(
         Some(id) => id,
         None => return FindResult::Overflow,
     };
-    let mut best = if cache.states[state_id].matched && retry_nonempty_at != Some(start) {
+    let mut best = if cache.matched[state_id] && retry_nonempty_at != Some(start) {
         Some(start)
     } else {
         None
@@ -325,7 +335,7 @@ fn find_at<U: Unit>(
         };
         state_id = next;
         pos += 1;
-        if cache.states[state_id].matched {
+        if cache.matched[state_id] {
             best = Some(pos);
         }
     }

@@ -5,12 +5,13 @@
 //! never calls the UTF-8 encoder. Result strings come from
 //! `PyUnicode_Substring`, so spans are reused directly.
 
-use std::sync::Mutex;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::Bound;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyList, PyString};
 
 use crate::{Regex as CoreRegex, Scratch, Ucs};
 
@@ -18,26 +19,56 @@ use crate::{Regex as CoreRegex, Scratch, Ucs};
 /// GIL-held, matching CPython `re` and the `rurex` short-string path.
 const DETACH_THRESHOLD: usize = 4096;
 
+/// Retained scratches per thread. A scratch owns the lazy DFA cache, so the
+/// cap bounds memory when a thread uses several patterns.
+const MAX_THREAD_SCRATCHES: usize = 4;
+
+static NEXT_PATTERN_ID: AtomicU64 = AtomicU64::new(1);
+
+thread_local! {
+    static SCRATCHES: RefCell<Vec<(u64, Scratch)>> = const { RefCell::new(Vec::new()) };
+}
+
 /// A compiled pattern exposed to Python.
 #[pyclass(name = "Regex", module = "exp_rurex")]
 pub struct PyRegex {
     inner: CoreRegex,
-    scratch_pool: Mutex<Vec<Scratch>>,
+    /// Stable identity used to match a thread-local scratch to this pattern.
+    id: u64,
 }
 
 impl PyRegex {
     fn take_scratch(&self) -> Scratch {
-        self.scratch_pool
-            .lock()
-            .ok()
-            .and_then(|mut pool| pool.pop())
-            .unwrap_or_else(|| self.inner.scratch())
+        let id = self.id;
+        let found = SCRATCHES.try_with(|cell| {
+            let mut pool = cell.borrow_mut();
+            let index = pool.iter().position(|(owner, _)| *owner == id);
+            index.map(|index| pool.swap_remove(index).1)
+        });
+        match found {
+            Ok(Some(scratch)) => scratch,
+            _ => self.inner.scratch(),
+        }
     }
 
     fn put_scratch(&self, scratch: Scratch) {
-        if let Ok(mut pool) = self.scratch_pool.lock() {
-            pool.push(scratch);
-        }
+        let id = self.id;
+        let _ = SCRATCHES.try_with(|cell| {
+            let mut pool = cell.borrow_mut();
+            if pool.len() >= MAX_THREAD_SCRATCHES {
+                pool.remove(0);
+            }
+            pool.push((id, scratch));
+        });
+    }
+}
+
+impl Drop for PyRegex {
+    fn drop(&mut self) {
+        let id = self.id;
+        let _ = SCRATCHES.try_with(|cell| {
+            cell.borrow_mut().retain(|(owner, _)| *owner != id);
+        });
     }
 }
 
@@ -49,7 +80,7 @@ impl PyRegex {
             .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))?;
         Ok(PyRegex {
             inner,
-            scratch_pool: Mutex::new(Vec::new()),
+            id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
         })
     }
 
@@ -57,28 +88,32 @@ impl PyRegex {
     ///
     /// The current engine exposes group 0 only; patterns with capture groups
     /// return the whole match, not group tuples.
-    fn findall(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Vec<Py<PyString>>> {
+    fn findall<'py>(&self, py: Python<'py>, text: &Bound<'_, PyString>) -> PyResult<Py<PyList>> {
         let ucs = py_ucs(text)?;
         let mut scratch = self.take_scratch();
+        let list = PyList::empty(py);
         let result = if ucs.len() < DETACH_THRESHOLD {
-            let mut matches = Vec::new();
             for found in self.inner.find_iter_with(&mut scratch, ucs) {
-                matches.push(substring(py, text, found.start(), found.end())?);
+                list.append(substring(py, text, found.start(), found.end())?)?;
             }
-            Ok(matches)
+            Ok(list)
         } else {
             let spans = collect_spans(&self.inner, &mut scratch, ucs, py);
-            spans
-                .into_iter()
-                .map(|(start, end)| substring(py, text, start, end))
-                .collect()
+            for (start, end) in spans {
+                list.append(substring(py, text, start, end)?)?;
+            }
+            Ok(list)
         };
         self.put_scratch(scratch);
-        result
+        result.map(Bound::unbind)
     }
 
     /// Return the first match as a string, or `None`.
-    fn find(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Option<Py<PyString>>> {
+    fn find<'py>(
+        &self,
+        py: Python<'py>,
+        text: &Bound<'_, PyString>,
+    ) -> PyResult<Option<Py<PyString>>> {
         let ucs = py_ucs(text)?;
         let mut scratch = self.take_scratch();
         let found = {
@@ -91,7 +126,7 @@ impl PyRegex {
         };
         self.put_scratch(scratch);
         found
-            .map(|m| substring(py, text, m.start(), m.end()))
+            .map(|m| substring(py, text, m.start(), m.end()).map(Bound::unbind))
             .transpose()
     }
 
@@ -136,12 +171,12 @@ fn collect_spans(
     }
 }
 
-fn substring(
-    py: Python<'_>,
+fn substring<'py>(
+    py: Python<'py>,
     text: &Bound<'_, PyString>,
     start: usize,
     end: usize,
-) -> PyResult<Py<PyString>> {
+) -> PyResult<Bound<'py, PyString>> {
     let start = isize::try_from(start)
         .map_err(|_| pyo3::exceptions::PyValueError::new_err("match start overflow"))?;
     let end = isize::try_from(end)
@@ -152,7 +187,7 @@ fn substring(
     }
     unsafe {
         let bound = Bound::from_owned_ptr(py, ptr);
-        Ok(bound.cast_into::<PyString>()?.unbind())
+        Ok(bound.cast_into::<PyString>()?)
     }
 }
 

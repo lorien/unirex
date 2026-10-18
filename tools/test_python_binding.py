@@ -7,6 +7,7 @@ Run with the built module on PYTHONPATH, for example:
 
 import re
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -75,6 +76,44 @@ def main() -> int:
             if ours.is_match(text) != bool(one_ref):
                 print(f"IS_MATCH MISMATCH pattern={pattern!r} text={text!r}")
                 return 1
+    first = exp_rurex.compile("a+")
+    second = exp_rurex.compile("[0-9]+")
+    for _ in range(1000):
+        if first.findall("baaab") != ["aaa"]:
+            print("SCRATCH MISMATCH first pattern")
+            return 1
+        if second.findall("x123y") != ["123"]:
+            print("SCRATCH MISMATCH second pattern")
+            return 1
+
+    long_text = "x" * 5000 + "bbb" + "y" * 5000
+    long_re = exp_rurex.compile("b+")
+    if long_re.findall(long_text) != ["bbb"]:
+        print("DETACH MISMATCH")
+        return 1
+
+    failures = []
+
+    def worker(regex_a, regex_b):
+        for _ in range(500):
+            if regex_a.findall("baaab") != ["aaa"]:
+                failures.append("thread regex_a")
+                return
+            if regex_b.findall("x123y") != ["123"]:
+                failures.append("thread regex_b")
+                return
+
+    threads = [
+        threading.Thread(target=worker, args=(first, second)) for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if failures:
+        print(f"THREAD MISMATCH: {failures[0]}")
+        return 1
+
     print(f"python binding smoke test ok: {len(PATTERNS)} patterns")
     return 0
 

@@ -5,9 +5,10 @@ against CPython's PEP 393 UCS storage: UCS-1, UCS-2, and UCS-4, with no UTF-8
 conversion in the matching path.
 
 Milestones 1, 3, 4, and 5 are implemented: a standalone Rust crate with a
-strict Python-compatible syntax subset, a first-unit prefilter, a lazy DFA,
-and a PyO3 binding. Milestone 2 compatibility work remains. It is not a full
-`re` replacement.
+strict Python-compatible syntax subset, a unit-wide first-unit prefilter, a
+lazy DFA, and a PyO3 binding. On the Telegram benchmark the one-thread
+end-to-end time is at parity with CPython `re`. Milestone 2 compatibility work
+remains, so it is not a full `re` replacement.
 
 ## Supported syntax
 
@@ -46,8 +47,10 @@ with Rust `regex` semantics:
 Patterns are parsed with `regex-syntax`'s AST. This crate validates the strict
 Python subset and lowers the AST to a small Thompson program; it does not use
 `regex-syntax` HIR, whose classes and assertions follow Rust `regex`
-semantics. Matching is a PikeVM over code points with two thread lists and a
-sparse visited set. Group 0 is tracked without capture slots.
+semantics. Matching is a lazy DFA over code points, fed by a packed pair
+first-unit prefilter; the PikeVM with two thread lists and a sparse visited set
+remains the fallback and group-0 engine. Group 0 is tracked without capture
+slots.
 
 Complexity is O(n * m) in haystack length and program size, with no
 backtracking. Compile size, repetition counts, class count, and class-range
@@ -102,14 +105,13 @@ hold the exclusive `/tmp/core4.lock` lease for the whole run.
 Full-corpus results on `regexus` (Intel i5-13500, first four physical P-cores
 `0,2,4,6`, one thread per core, SMT siblings idle, `/tmp/core4.lock` held):
 
-- 1 thread: UCS 0.132 s, Rust `regex` bytes 0.071 s, str 0.071 s.
-- 2 threads: UCS 0.069 s, bytes 0.038 s, str 0.038 s.
-- 3 threads: UCS 0.047 s, bytes 0.027 s, str 0.027 s.
-- 4 threads: UCS 0.037 s, bytes 0.021 s, str 0.021 s.
+- 1 thread: UCS 0.0699 s, Rust `regex` bytes 0.0716 s, str 0.0711 s.
+- 2 threads: UCS 0.0393 s, bytes 0.0381 s, str 0.0376 s.
+- 3 threads: UCS 0.0299 s, bytes 0.0265 s, str 0.0267 s.
+- 4 threads: UCS 0.0261 s, bytes 0.0210 s, str 0.0210 s.
 
-The DFA is 3.5x faster than the prefiltered PikeVM and scales 3.61x from one
-to four P-cores. It remains about 1.86x slower than Rust `regex` bytes at one
-thread and 1.74x slower at four.
+UCS is slightly faster than Rust `regex` bytes at one thread and 1.24x slower
+at four. It scales 2.68x from one to four P-cores, while bytes scales 3.41x.
 
 Earlier laptop numbers were wall-clock only and are kept in
 `spec/docs/benchmarks.md` as historical.
@@ -147,12 +149,11 @@ rx.is_match("hello @alice123")
 
 End-to-end, one thread, GIL, full corpus, remote `regexus`:
 
-- `exp_rurex`: median 0.231 s, minimum 0.229 s.
-- CPython `re`: median 0.191 s, minimum 0.190 s.
+- `exp_rurex`: median 0.1884 s, minimum 0.1835 s.
+- CPython `re`: median 0.1914 s, minimum 0.1913 s.
 
-`exp_rurex` is about 1.21x slower than CPython `re`. It is below the 0.75 s and
-0.45 s targets on this machine, but the remote CPU is much faster than the
-original laptop. GIL threads 2-4 do not scale.
+`exp_rurex` is 1.6 percent faster than CPython `re` at the median and 4.1
+percent faster at the minimum. GIL threads 2-4 do not scale meaningfully.
 
 ## Not yet implemented
 

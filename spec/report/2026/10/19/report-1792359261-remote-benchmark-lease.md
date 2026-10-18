@@ -86,7 +86,8 @@ than the original laptop. No `rurex` engine was run.
 ### Future-task notes
 
 - [open] Keep `/tmp/core4.lock` for the first four P-cores on `regexus`.
-- [open] Re-run the remote matrix after any DFA change.
+- [acted] Re-run the remote matrix after any DFA change. Re-ran the full
+  engine and Python matrix after the unit-wide prefilter and flat transitions.
 - [open] Add a lock-contention test to CI, not only a manual check.
 - [open] Record package temperature and throttling if `turbostat` is installed.
 

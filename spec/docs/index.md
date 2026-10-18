@@ -64,3 +64,9 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0014-benchmark-core-lease.md](adr/0014-benchmark-core-lease.md) —
   cooperative `/tmp/core4.lock` lease for the first four physical P-cores,
   with `--lock`, `--lock-wait`, and `--no-lock`.
+- [adr/0015-unit-wide-prefilter-scan.md](adr/0015-unit-wide-prefilter-scan.md)
+  — prepared native-endian packed pair scanning for UCS-2/UCS-4 first units,
+  with full-unit verification and a scalar tail fallback.
+- [adr/0016-thread-local-scratch.md](adr/0016-thread-local-scratch.md) —
+  per-thread scratch reuse keyed by a stable pattern id, replacing the
+  per-call `Mutex` pool.

@@ -1,7 +1,7 @@
 # UCS Access Through the CPython C API
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (scratch pooling revised by ADR-0016)
 
 ## Context
 

@@ -107,6 +107,6 @@ Milestones 1, 3, 4, and 5 are implemented. The current layout is:
   artifacts.
 
 The benchmark harness, first-unit prefilter, lazy DFA, and PyO3 binding exist.
-Remaining work is Python class/flag/capture compatibility (milestone 2) and
-engine optimization to close the end-to-end gap. The current plan is in
-`spec/docs/plan.md`.
+The one-thread end-to-end Telegram result is now slightly faster than CPython
+`re`. Remaining work is Python class/flag/capture compatibility (milestone 2)
+and the open tasks in `spec/docs/plan.md`.

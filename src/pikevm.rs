@@ -85,6 +85,7 @@ fn find_pike<U: Unit>(
         return None;
     }
 
+    let first = prog.first.as_ref().and_then(|first| first.scan::<U>());
     let mut matched: Option<Match> = None;
     let mut pos = search_start;
 
@@ -92,7 +93,7 @@ fn find_pike<U: Unit>(
         nlist.clear();
 
         if clist.is_empty() && matched.is_none() {
-            if let Some(first) = &prog.first {
+            if let Some(first) = &first {
                 match first.find_next(hay, pos) {
                     Some(next) => pos = next,
                     None => break,

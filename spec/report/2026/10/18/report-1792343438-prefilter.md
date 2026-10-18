@@ -87,8 +87,9 @@ marks rather than mentions.
   differential ran 40,414 cases with zero mismatches.
 - [acted] Keep the prefilter and DFA candidate selection consistent; the DFA
   is anchored at each prefilter candidate.
-- [open] Revisit the end-to-end target only after the DFA and the Python
-  binding exist.
+- [acted] Revisit the end-to-end target only after the DFA and the Python
+  binding exist. With both implemented, the one-thread end-to-end median is
+  0.1884 s versus CPython `re` at 0.1914 s on `regexus`.
 
 ### Tooling/process
 

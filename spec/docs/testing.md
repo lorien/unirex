@@ -4,17 +4,19 @@
 
 Milestones 1, 3, 4, and 5 are implemented. The suite covers the strict Python
 subset, the Python 3.7+ empty-match rule, all three UCS kinds, lone
-surrogates, the first-unit prefilter, the lazy DFA and its PikeVM fallback,
-the PyO3 binding, adversarial patterns, and a randomized comparison against
-CPython `re`.
+surrogates, the unit-wide first-unit prefilter, the lazy DFA and its PikeVM
+fallback, the PyO3 binding, adversarial patterns, and a randomized comparison
+against CPython `re`.
 
 ## Test layers
 
 1. **Compiler and adapter tests.** Accepted and rejected syntax with error
    positions, `\Z` normalization, Python numeric-escape rules, `$` and `\w`
    rejection, class set operations, nested classes, and Rust-only assertions.
-2. **Unit tests.** `Ucs` access, kind preservation, slicing, and lone
-   surrogates.
+2. **Unit tests.** `Ucs` access, kind preservation, slicing, lone surrogates,
+   and the first-unit scan. Scan tests cover all three widths, targets above
+   `0xFF`, `0xFFFF`, and `0x10FFFF`, short tails, and unaligned byte hits that
+   must be discarded.
 3. **Matching tests.** Literals, `.`, explicit classes, alternation, greedy
    repetition, anchors, grouping, class edge cases, and first-unit prefilter
    cases: optional prefixes, alternation, narrow classes, anchors, and
@@ -35,8 +37,10 @@ CPython `re`.
    finish within a fixed budget.
 8. **Python binding smoke test.** `tools/test_python_binding.py` compares
    `findall`, `find`, and `is_match` with CPython `re` on UCS-1, UCS-2, UCS-4,
-   and lone-surrogate inputs. Capture groups are group 0 only; the smoke test
-   uses group-free patterns for `findall`.
+   and lone-surrogate inputs. It also alternates two compiled patterns,
+   exercises the GIL-detach threshold, and scans the same patterns from several
+   threads. Capture groups are group 0 only; the smoke test uses group-free
+   patterns for `findall`.
 9. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
    untimed, compiles once, and times `findall` per post. It verifies the full
    mention counts. The full corpus is not part of ordinary CI.

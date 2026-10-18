@@ -3,9 +3,11 @@
 ## Current state
 
 Milestones 1, 3, 4, and 5 are implemented: a standalone crate with a strict
-Python-dialect subset, a Thompson program, a group-0 PikeVM, a first-unit
-prefilter, a lazy DFA over UCS-1, UCS-2, and UCS-4, and a PyO3 binding.
-Captures and the remaining Python classes and flags remain.
+Python-dialect subset, a Thompson program, a group-0 PikeVM, a unit-wide
+first-unit prefilter, a lazy DFA over UCS-1, UCS-2, and UCS-4, and a PyO3
+binding. On the Telegram benchmark the one-thread end-to-end time is at parity
+with CPython `re` (0.188 s versus 0.191 s on `regexus`). Captures and the
+remaining Python classes and flags remain.
 
 ## Compilation pipeline
 
@@ -87,9 +89,9 @@ word boundaries.
 
 The canonical class form is a sorted, non-overlapping list of inclusive
 `(u32, u32)` ranges, plus a negation flag. Membership uses binary search.
-The engine lowers explicit classes and `.`. The first-unit prefilter uses
-`memchr` for single units; per-kind class bitmaps and two-level tables remain
-future optimizations.
+The engine lowers explicit classes and `.`. The first-unit prefilter uses a
+prepared packed pair scan for a single unit; per-kind class bitmaps and
+two-level tables remain future optimizations.
 
 Every accelerator must be derived from the same range list, so membership is
 identical across UCS kinds. The lazy DFA builds separate equivalence-class
@@ -152,15 +154,21 @@ following epsilon transitions. It is disabled when `Match` is reachable
 than 1,024 code points, or when it has more than 16 ranges.
 
 When the thread list is empty and no match is pending, the PikeVM jumps to the
-next candidate instead of advancing one unit at a time. A single unit is
-searched with `memchr` over the raw unit bytes; for UCS-2 and UCS-4 a byte hit
-is checked against the full unit, so endianness and false hits inside other
-units are handled. A small range set uses a scalar scan.
+next candidate instead of advancing one unit at a time. For a single-unit
+first set, `FirstSet::One` stores the native-endian unit needle and prepares a
+packed pair byte finder per UCS width at compile time. A `Scan` borrows that
+finder and searches the raw unit bytes in one pass; each candidate is checked
+for unit alignment and exact unit equality, so false hits inside other units
+are discarded. The short tail below the vector finder's minimum length is
+scanned one unit at a time. On a CPU without the finder, the scan falls back to
+a scalar unit search. A small range set still uses a scalar scan. See
+ADR-0015.
 
 The prefilter is an optimization only. A false negative is a correctness bug,
 so uncertain extraction disables it. The full benchmark improved from 5.424 s
-to 1.266 s at one thread, which is not enough; see `benchmarks.md` and
-ADR-0010.
+to 1.266 s at one thread before the DFA; the unit-wide scan and DFA together
+bring the one-thread engine time to 0.0699 s on `regexus`. See
+`benchmarks.md`, ADR-0010, and ADR-0015.
 
 ## Lazy DFA
 
@@ -182,7 +190,10 @@ the DFA scans forward from each candidate.
   `Assert(End)` is kept pending until the final position, then resolved in a
   final closure.
 - States and transitions are cached in `Scratch`, not in `Regex`, so workers
-  do not contend. The state cache is capped at 4,096 states.
+  do not contend. Transition rows are stored in one flat `Vec<u32>` indexed by
+  `state_id * num_classes + class_id`, and a parallel compact match-flag array
+  keeps the per-unit loop out of the state vector. The state cache is capped at
+  4,096 states.
 - On cache overflow, class-count overflow, or an out-of-contract UCS-4 unit,
   the DFA is disabled for that scratch and the PikeVM takes over.
 - The DFA is an optimization, not the correctness authority. The PikeVM
@@ -190,11 +201,12 @@ the DFA scans forward from each candidate.
   captures, and for any construct outside the DFA path.
 
 The local benchmark improved from 1.266 s to 0.360 s at one thread. After
-caching initial DFA states and replacing the transition hash map with dense
-per-state rows, the remote `regexus` benchmark reached 0.132 s at one thread
-and 0.037 s at four. Rust `regex` bytes is 0.071 s at one thread and 0.021 s at
-four, so the DFA still does not beat the same-thread baseline. See
-`benchmarks.md`.
+caching initial DFA states, flattening transition rows, adding the match-flag
+array, and switching the prefilter to a unit-wide scan, the remote `regexus`
+benchmark reached 0.0699 s at one thread and 0.0261 s at four. Rust `regex`
+bytes is 0.0716 s at one thread and 0.0210 s at four. UCS is slightly faster
+than bytes at one thread, but scales less well at four because each worker
+scans wider UCS storage and keeps its own DFA cache. See `benchmarks.md`.
 
 ## Python binding
 
@@ -209,8 +221,13 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   alive. Strings are immutable; no Python object is touched in a detached scan.
 - Result strings come from `PyUnicode_Substring` using match code-point
   offsets. There is no UTF-8 encode or decode in the result path.
-- Each compiled `Regex` owns a scratch pool. A call takes a scratch, scans
-  without holding the pool lock, and returns it.
+- Each compiled `Regex` has a stable pattern id. A thread-local cache keeps
+  one `Scratch` per pattern per thread, capped at four patterns. A call takes
+  the cached scratch, scans without a lock, and returns it. Dropping the
+  `Regex` clears its current thread's entry; other threads release their entry
+  at thread exit or when the cache evicts it. See ADR-0016.
+- `findall` appends result strings directly to a Python list instead of
+  building an intermediate `Vec`.
 - Short strings match under the GIL. Haystacks of at least 4,096 code units
   release the GIL around the scan and build result strings afterward.
 - The extension is non-abi3 because the UCS data accessors are outside the
@@ -219,9 +236,10 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   not `re.findall`'s group tuples.
 
 End-to-end benchmark on `regexus`, full corpus, one thread, GIL:
-`exp_rurex` was 0.231 s median, 0.229 s minimum; CPython `re` was 0.191 s
-median, 0.190 s minimum. The binding works, but the engine is about 1.21 times
-slower than CPython `re`. GIL threads 2-4 do not scale. See `benchmarks.md`.
+`exp_rurex` was 0.1884 s median, 0.1835 s minimum; CPython `re` was 0.1914 s
+median, 0.1913 s minimum. The engine is now at parity with, and slightly
+faster than, CPython `re` on this benchmark. GIL threads 2-4 do not scale
+meaningfully. See `benchmarks.md`.
 
 ## Memory and safety
 

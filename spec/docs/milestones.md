@@ -52,7 +52,8 @@ Status: implemented.
   same-machine Rust `regex` bytes and str baselines.
 
 Results: 5.424 s before the prefilter, 1.266 s after at one thread, 0.413 s at
-four threads. The prefilter is necessary but not sufficient.
+four threads. The prefilter is necessary but not sufficient. It later became a
+unit-wide packed pair scan; see milestone 4.
 
 Acceptance: differential suites pass with no prefilter false negatives;
 engine-only and end-to-end numbers are reported separately; ADR-0010 records
@@ -71,10 +72,11 @@ Status: implemented.
 - DFA used when a safe first-unit set exists; the prefilter selects candidates.
   Other patterns remain correct through the PikeVM.
 
-Results: local 1.266 s to 0.360 s at one thread. After initial-state caching
-and dense transitions, remote `regexus` is 0.132 s at one thread and 0.037 s at
-four. Rust `regex` bytes is 0.071 s at one thread and 0.021 s at four; the DFA
-does not beat the same-thread baseline.
+Results: local 1.266 s to 0.360 s at one thread. After initial-state caching,
+flat transitions, a parallel match-flag array, and the unit-wide prefilter,
+remote `regexus` is 0.0699 s at one thread and 0.0261 s at four. Rust `regex`
+bytes is 0.0716 s at one thread and 0.0210 s at four. UCS is slightly faster
+at one thread and slower at four.
 
 Acceptance: cache cap and fallback are tested; DFA results match the PikeVM on
 the differential and assertion suites; the DFA is faster on the full corpus.
@@ -88,16 +90,16 @@ builds are unverified.
 - UCS access through CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
   `PyUnicode_GET_LENGTH`; no private offsets.
 - Result strings from `PyUnicode_Substring`; no UTF-8 conversion.
-- Scratch pooling and GIL release for haystacks of at least 4,096 units.
+- Thread-local scratch reuse keyed by pattern id, and GIL release for
+  haystacks of at least 4,096 units.
 - End-to-end benchmark against CPython `re`.
 
 Remote `regexus`, first four physical P-cores, one thread, GIL:
 
-- `exp_rurex`: median 0.231 s, minimum 0.229 s.
-- CPython `re`: median 0.191 s, minimum 0.190 s.
+- `exp_rurex`: median 0.1884 s, minimum 0.1835 s.
+- CPython `re`: median 0.1914 s, minimum 0.1913 s.
 
-The binding works and counts are correct, but it is about 1.21 times slower than
-CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but the
-remote CPU is much faster than the original laptop. Engine optimization is the
-next step; the DFA is still about 2.7 times slower than Rust `regex` bytes at
-one thread.
+The binding works and counts are correct. It is 1.6 percent faster than
+CPython `re` at the median and 4.1 percent faster at the minimum, so the
+one-thread end-to-end parity target is met. The engine is also slightly faster
+than Rust `regex` bytes at one thread, but scales less well at four.

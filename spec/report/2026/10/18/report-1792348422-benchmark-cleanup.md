@@ -40,9 +40,9 @@ PikeVM. The remaining gap is in per-candidate DFA setup and transition lookup.
 
 ### Spec/ADR amendments
 
-- [open] The DFA still does not beat the same-thread bytes baseline. Decide
-  whether to optimize transitions further or proceed to the Python binding
-  and judge the end-to-end result first.
+- [acted] The DFA still does not beat the same-thread bytes baseline. The
+  unit-wide prefilter and flat DFA transitions changed this: UCS is now
+  0.0699 s versus bytes 0.0716 s at one thread on `regexus`.
 - [open] The benchmark still reports one total time. Add per-kind timing to
   show whether UCS-4 posts dominate.
 - [open] The full 1M-post benchmark remains unsuitable for ordinary CI.
@@ -51,12 +51,14 @@ PikeVM. The remaining gap is in per-candidate DFA setup and transition lookup.
 
 ### Future-task notes
 
-- [open] Milestone 5: PyO3 binding and the end-to-end comparison against
-  `rurex` str.
+- [acted] Milestone 5: PyO3 binding and the end-to-end comparison against
+  `rurex` str. The binding exists and now beats CPython `re` at one thread;
+  no `rurex` engine was run.
 - [open] Keep engine-only and end-to-end numbers separate. The 0.75 s target
   includes Python overhead and result construction.
-- [open] Revisit the transition cache only if the binding shows the engine is
-  the limiting factor.
+- [acted] Revisit the transition cache only if the binding shows the engine
+  is the limiting factor. The cache was flattened and given a compact match
+  flag array after profiling showed the prefilter was the larger cost.
 
 ### Tooling/process
 

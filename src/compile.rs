@@ -10,7 +10,7 @@ use regex_syntax::ast::{
 };
 
 use crate::error::Error;
-use crate::ucs::Unit;
+use crate::ucs::{ByteFinder, Scan, UcsKind, Unit};
 
 const MAX_PATTERN_LEN: usize = 100_000;
 const MAX_INSTS: usize = 100_000;
@@ -35,27 +35,52 @@ pub(crate) struct Program {
 #[derive(Clone, Debug)]
 pub(crate) enum FirstSet {
     /// Exactly one code unit, searched with a fast unit scan.
-    One(u32),
+    One {
+        target: u32,
+        finder16: Option<Box<ByteFinder>>,
+        finder32: Option<Box<ByteFinder>>,
+    },
     /// A small set of inclusive ranges, searched by a scalar scan.
     Ranges(Vec<(u32, u32)>),
 }
 
 impl FirstSet {
-    pub(crate) fn find_next<U: Unit>(&self, hay: &[U], start: usize) -> Option<usize> {
-        if start > hay.len() {
-            return None;
-        }
+    /// Prepare a scan for one UCS width.
+    ///
+    /// The byte finders are prepared at compile time. The returned scan only
+    /// borrows this set for the range case, so it is used for the whole search.
+    pub(crate) fn scan<U: Unit>(&self) -> Option<Scan<'_>> {
         match self {
-            FirstSet::One(target) => U::find_next_unit(hay, *target, start),
-            FirstSet::Ranges(ranges) => hay[start..]
-                .iter()
-                .position(|unit| {
-                    let code_point = (*unit).into();
-                    ranges
-                        .iter()
-                        .any(|&(lo, hi)| code_point >= lo && code_point <= hi)
-                })
-                .map(|index| start + index),
+            FirstSet::One {
+                target,
+                finder16,
+                finder32,
+            } => match U::KIND {
+                UcsKind::Ucs1 => Some(Scan::One(*target)),
+                UcsKind::Ucs2 => {
+                    if *target > u32::from(u16::MAX) {
+                        None
+                    } else {
+                        finder16
+                            .as_deref()
+                            .map_or(Some(Scan::One(*target)), |finder| {
+                                Some(Scan::Bytes {
+                                    target: *target,
+                                    finder,
+                                })
+                            })
+                    }
+                }
+                UcsKind::Ucs4 => finder32
+                    .as_deref()
+                    .map_or(Some(Scan::One(*target)), |finder| {
+                        Some(Scan::Bytes {
+                            target: *target,
+                            finder,
+                        })
+                    }),
+            },
+            FirstSet::Ranges(ranges) => Some(Scan::Ranges(ranges)),
         }
     }
 }
@@ -650,7 +675,12 @@ fn first_set(insts: &[Inst], classes: &[Class], start: usize) -> Option<FirstSet
         return None;
     }
     if merged.len() == 1 && merged[0].0 == merged[0].1 {
-        Some(FirstSet::One(merged[0].0))
+        let target = merged[0].0;
+        Some(FirstSet::One {
+            target,
+            finder16: ByteFinder::new(&(target as u16).to_ne_bytes()).map(Box::new),
+            finder32: ByteFinder::new(&target.to_ne_bytes()).map(Box::new),
+        })
     } else {
         Some(FirstSet::Ranges(merged))
     }
@@ -680,5 +710,33 @@ mod tests {
         assert_eq!(normalize_end_anchor(r"\\Z"), r"\\Z");
         assert_eq!(normalize_end_anchor(r"\\\Z"), r"\\\z");
         assert_eq!(normalize_end_anchor(r"a\Zb"), r"a\zb");
+    }
+
+    #[test]
+    fn first_set_prepares_scans_for_each_width() {
+        let program = compile("@abc").unwrap();
+        let first = program.first.as_ref().unwrap();
+        assert!(matches!(first.scan::<u8>(), Some(Scan::One(0x40))));
+        assert!(matches!(
+            first.scan::<u16>(),
+            Some(Scan::Bytes { target: 0x40, .. } | Scan::One(0x40))
+        ));
+        assert!(matches!(
+            first.scan::<u32>(),
+            Some(Scan::Bytes { target: 0x40, .. } | Scan::One(0x40))
+        ));
+
+        let program = compile("𐐷").unwrap();
+        let first = program.first.as_ref().unwrap();
+        assert!(first.scan::<u16>().is_none());
+        assert!(matches!(
+            first.scan::<u32>(),
+            Some(
+                Scan::Bytes {
+                    target: 0x10437,
+                    ..
+                } | Scan::One(0x10437)
+            )
+        ));
     }
 }

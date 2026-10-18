@@ -61,9 +61,9 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 
 ### Spec/ADR amendments
 
-- [open] Optimize the DFA fast path. This is the next plan task, priority 4.
-  The target is to close the engine-only gap and make the end-to-end result
-  reliably competitive with CPython `re`.
+- [acted] Optimize the DFA fast path. The unit-wide prefilter and DFA
+  hot-loop changes closed the engine-only gap and made the one-thread
+  end-to-end result slightly faster than CPython `re`.
 - [open] Verify CPython 3.10 through 3.15 and free-threaded 3.14t. Only 3.13
   GIL was tested. This is a separate plan task.
 - [open] The binding exposes group 0 only. Patterns with capture groups return
@@ -72,8 +72,9 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 - [open] The extension is non-abi3 because the UCS accessors are outside the
   limited API. Add a limited-API fallback only if one wheel per version becomes
   a problem.
-- [open] GIL-detach behavior for long haystacks is implemented but not covered
-  by the smoke test beyond short strings; add a long-string test.
+- [acted] GIL-detach behavior for long haystacks is implemented but not
+  covered by the smoke test beyond short strings; add a long-string test.
+  The binding smoke test now crosses the detach threshold.
 
 ### Future-task notes
 
