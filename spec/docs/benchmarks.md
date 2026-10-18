@@ -38,6 +38,9 @@ project only as data provenance; this benchmark does not import or run the
   to be discarded and retried up to `--retries` times.
 - `--max-load F` aborts before warmup when the initial load average is above
   `F`.
+- `--lock PATH` takes an exclusive advisory lease, default
+  `/tmp/core4.lock`. `--lock-wait F` sets the timeout. `--no-lock` is for a
+  matrix child whose parent already holds the lease.
 - The runner does not change the CPU governor. It fails if it cannot obtain
   the requested number of clean runs.
 - Report first, median, minimum, nanoseconds per post, MB/s, CPU time,
@@ -46,6 +49,15 @@ project only as data provenance; this benchmark does not import or run the
   mode must match it. For the full corpus, 334,136 mentions in 186,226 posts
   is also asserted.
 - `--self-test` runs an embedded UCS-1/2/4 corpus offline.
+
+## Core lease
+
+On `regexus`, benchmarks use the first four physical P-cores, logical CPUs
+`0,2,4,6`; SMT siblings `1,3,5,7` stay idle. The lease is an exclusive
+`flock` on `/tmp/core4.lock`, held for the whole matrix. It is advisory: all
+benchmark agents must take it. It does not stop non-cooperating processes;
+per-worker efficiency detects that contamination. The format and alternatives
+are in ADR-0014.
 
 ## Corpus
 
@@ -63,13 +75,45 @@ project only as data provenance; this benchmark does not import or run the
 If the corpus is unavailable, a synthetic corpus may be used, but every
 result must be labeled synthetic.
 
-## Results
+## Remote results on regexus
 
-The numbers in this section were collected before the load-aware runner. They
-are wall-clock only and did not record CPU time, frequency, or contamination.
-Treat them as provisional. The current runner rejects contaminated runs and
-records the conditions; rerun on an idle machine before using the numbers for
-optimization decisions.
+Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
+Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
+CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
+Governor stayed `powersave`, turbo enabled. Frequency was 4.6 GHz to 4.8 GHz.
+Load was 1.5 to 2.1 from other work, but per-worker efficiency stayed at 0.91
+to 1.0. `/tmp/core4.lock` was held for the whole matrix.
+
+Engine-only medians, full corpus:
+
+- 1 thread: UCS 0.1912 s, Rust `regex` bytes 0.0712 s, str 0.0713 s.
+- 2 threads: UCS 0.0983 s, bytes 0.0380 s, str 0.0380 s.
+- 3 threads: UCS 0.0694 s, bytes 0.0268 s, str 0.0267 s.
+- 4 threads: UCS 0.0536 s, bytes 0.0210 s, str 0.0211 s.
+
+UCS scales 3.56 times from 1 to 4 threads; bytes scales 3.39 times. UCS is
+2.69 times slower than bytes at one thread and 2.55 times slower at four
+threads.
+
+End-to-end Python, same CPU lists, GIL:
+
+- 1 thread: `exp_rurex` 0.2960 s median, 0.2941 s minimum; CPython `re`
+  0.1909 s median, 0.1903 s minimum.
+- 2 threads: `exp_rurex` 0.2972 s; `re` 0.1957 s.
+- 3 threads: `exp_rurex` 0.3330 s; `re` 0.3572 s.
+- 4 threads: `exp_rurex` 0.5474 s; `re` 0.4419 s.
+
+The GIL prevents scaling beyond one thread; the 1-thread result is the
+meaningful end-to-end number. `exp_rurex` is about 1.55 times slower than
+CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but
+this CPU is much faster than the original laptop baseline, and no `rurex`
+engine was run.
+
+## Historical laptop results
+
+The numbers below were collected before the load-aware runner and before the
+remote lease. They are wall-clock only and did not record CPU time, frequency,
+or contamination. Treat them as provisional history, not current results.
 
 Load-aware attempt on 2026-10-18: an external four-thread benchmark kept the
 machine at load near 3. The runner rejected all four-thread attempts and most
@@ -113,7 +157,7 @@ optimization, not a change in the supported language or correctness.
 Numbers from other engines or machines are external context and are not part
 of this benchmark.
 
-## End-to-end Python benchmark
+## Historical end-to-end laptop benchmark
 
 `tools/bench_python.py` measures the same corpus through the Python binding.
 It loads and compiles outside the timed window, then each worker scans its

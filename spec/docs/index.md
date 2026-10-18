@@ -61,3 +61,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0013-load-aware-benchmark.md](adr/0013-load-aware-benchmark.md) —
   observational benchmarking with pinning, warmup, CPU time, per-worker
   efficiency, and rejection of contaminated runs.
+- [adr/0014-benchmark-core-lease.md](adr/0014-benchmark-core-lease.md) —
+  cooperative `/tmp/core4.lock` lease for the first four physical P-cores,
+  with `--lock`, `--lock-wait`, and `--no-lock`.

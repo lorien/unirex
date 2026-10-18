@@ -45,10 +45,11 @@ numbers are marked provisional in the docs.
 
 ### Spec/ADR amendments
 
-- [open] Run the load-aware baseline on an idle machine. This is now the
-  highest-priority plan task.
-- [open] Use the load-aware baseline before optimizing the DFA or comparing
-  end-to-end numbers.
+- [acted] Run the load-aware baseline. Executed on `regexus` with the first
+  four physical P-cores and `/tmp/core4.lock`; 1-4 thread engine and Python
+  matrices recorded.
+- [acted] Use the load-aware baseline before optimizing the DFA or comparing
+  end-to-end numbers. The remote baseline is now the reference.
 - [open] For many-core end-to-end runs, add a process-based mode. Python GIL
   threads do not scale.
 - [open] The governor remains `powersave`. The owner may set `performance`
@@ -58,10 +59,10 @@ numbers are marked provisional in the docs.
 
 - [open] Record CPU package temperature and thermal throttling if `turbostat`
   is available; currently the runner records frequency but not temperature.
-- [open] Keep the external `rurex` process out of benchmark runs; it is not
-  part of this repository and contaminated the first attempt.
-- [open] Rerun the 1-thread and 4-thread engine matrix and the `exp_rurex`
-  versus `re` end-to-end pair when the machine is idle.
+- [acted] Keep external benchmark processes out of benchmark runs. The
+  `/tmp/core4.lock` lease was used for the remote matrix.
+- [acted] Rerun the 1-thread and 4-thread engine matrix and the `exp_rurex`
+  versus `re` end-to-end pair. Completed remotely.
 
 ### Tooling/process
 

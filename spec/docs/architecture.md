@@ -216,11 +216,10 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
 - Only group 0 is exposed. Patterns with capture groups return the whole match,
   not `re.findall`'s group tuples.
 
-End-to-end benchmark, full corpus, cold fresh process, one thread, GIL:
-`exp_rurex` was 0.596 s to 0.604 s per run, with a median of 0.598 s over five
-runs. CPython `re` was 0.490 s to 0.648 s, median 0.501 s. The binding works,
-but the engine is about 1.2 times slower than CPython `re`. These numbers
-predate the load-aware protocol and are provisional. See `benchmarks.md`.
+End-to-end benchmark on `regexus`, full corpus, one thread, GIL:
+`exp_rurex` was 0.296 s median, 0.294 s minimum; CPython `re` was 0.191 s
+median, 0.190 s minimum. The binding works, but the engine is about 1.55 times
+slower than CPython `re`. GIL threads 2-4 do not scale. See `benchmarks.md`.
 
 ## Memory and safety
 

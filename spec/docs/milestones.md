@@ -90,14 +90,13 @@ builds are unverified.
 - Scratch pooling and GIL release for haystacks of at least 4,096 units.
 - End-to-end benchmark against CPython `re`.
 
-Results, cold fresh process, one thread, GIL, full corpus:
+Remote `regexus`, first four physical P-cores, one thread, GIL:
 
-- `exp_rurex`: median 0.598 s, minimum 0.596 s.
-- CPython `re`: median 0.501 s, minimum 0.490 s.
+- `exp_rurex`: median 0.296 s, minimum 0.294 s.
+- CPython `re`: median 0.191 s, minimum 0.190 s.
 
-The binding works and counts are correct, but it is about 1.2 times slower than
-CPython `re`. These numbers predate the load-aware protocol and are
-provisional.
-Engine optimization is the next step; the DFA is still about twice as slow as
-Rust `regex` bytes at one thread. The 0.75 s baseline is met only in the best
-runs, not reliably. The ideal 0.45 s target is not met.
+The binding works and counts are correct, but it is about 1.55 times slower than
+CPython `re`. It is below the 0.75 s and 0.45 s targets on this machine, but the
+remote CPU is much faster than the original laptop. Engine optimization is the
+next step; the DFA is still about 2.7 times slower than Rust `regex` bytes at
+one thread.

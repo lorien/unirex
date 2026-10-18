@@ -96,28 +96,23 @@ downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
 
 Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines).
 
-Full-corpus results, Intel i5-8350U, Rust 1.97.1. Compare only the same
-thread count.
+On `regexus`, benchmarks use the first four physical P-cores `0,2,4,6` and
+hold the exclusive `/tmp/core4.lock` lease for the whole run.
 
-One thread:
+Full-corpus results on `regexus` (Intel i5-13500, first four physical P-cores
+`0,2,4,6`, one thread per core, SMT siblings idle, `/tmp/core4.lock` held):
 
-- PikeVM: 5.424 s.
-- Prefilter: 1.266 s.
-- Lazy DFA: 0.360 s.
-- Rust `regex` bytes: 0.169 s.
-- Rust `regex` str: 0.185 s.
+- 1 thread: UCS 0.191 s, Rust `regex` bytes 0.071 s, str 0.071 s.
+- 2 threads: UCS 0.098 s, bytes 0.038 s, str 0.038 s.
+- 3 threads: UCS 0.069 s, bytes 0.027 s, str 0.027 s.
+- 4 threads: UCS 0.054 s, bytes 0.021 s, str 0.021 s.
 
-Four threads:
+The DFA is 3.5x faster than the prefiltered PikeVM and scales 3.56x from one
+to four P-cores. It remains about 2.7x slower than Rust `regex` bytes at one
+thread and 2.55x slower at four.
 
-- Prefilter: 0.413 s.
-- Lazy DFA: 0.110 s.
-- Rust `regex` bytes: 0.061 s.
-- Rust `regex` str: 0.061 s.
-
-The DFA is 3.5x faster than the prefiltered PikeVM. It is about 2.1x slower
-than the bytes baseline at one thread and 1.8x slower at four threads. It does
-not beat the same-thread baseline. These gaps are provisional until a clean
-load-aware rerun.
+Earlier laptop numbers were wall-clock only and are kept in
+`spec/docs/benchmarks.md` as historical.
 
 ## Python binding
 
@@ -150,16 +145,14 @@ rx.find("hello @alice123")
 rx.is_match("hello @alice123")
 ```
 
-End-to-end, cold fresh process, one thread, GIL, full corpus:
+End-to-end, one thread, GIL, full corpus, remote `regexus`:
 
-These end-to-end numbers are also provisional; they predate CPU-time and
-efficiency accounting.
+- `exp_rurex`: median 0.296 s, minimum 0.294 s.
+- CPython `re`: median 0.191 s, minimum 0.190 s.
 
-- `exp_rurex`: median 0.598 s, minimum 0.596 s.
-- CPython `re`: median 0.501 s, minimum 0.490 s.
-
-The binding is correct, but it is about 1.2 times slower than CPython `re`.
-Rerun on an idle machine before using the gap for optimization decisions.
+`exp_rurex` is about 1.55x slower than CPython `re`. It is below the 0.75 s and
+0.45 s targets on this machine, but the remote CPU is much faster than the
+original laptop. GIL threads 2-4 do not scale.
 
 ## Not yet implemented
 

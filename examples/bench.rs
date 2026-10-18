@@ -74,6 +74,8 @@ struct Options {
     threads: usize,
     cpu_list: Vec<usize>,
     max_load: Option<f64>,
+    lock: Option<PathBuf>,
+    lock_wait: f64,
     pattern: String,
     json: Option<PathBuf>,
     expect_mentions: Option<usize>,
@@ -97,6 +99,8 @@ impl Default for Options {
             threads: 1,
             cpu_list: Vec::new(),
             max_load: None,
+            lock: Some(PathBuf::from("/tmp/core4.lock")),
+            lock_wait: 600.0,
             pattern: DEFAULT_PATTERN.to_string(),
             json: None,
             expect_mentions: None,
@@ -161,6 +165,10 @@ fn run() -> Result<(), String> {
             ));
         }
     }
+    let _lease = match &opts.lock {
+        Some(path) => Some(CoreLease::acquire(path, opts.lock_wait)?),
+        None => None,
+    };
 
     let (corpus_path, corpus_sha256) = resolve_corpus(&opts)?;
     let report = match opts.mode {
@@ -376,6 +384,9 @@ fn print_usage() {
            --threads N          worker threads (default 1)\n\
            --cpu-list LIST      pin workers, e.g. 2 or 0,2,4,6 or 0-3\n\
            --max-load F         abort if 1-minute load is above F\n\
+           --lock PATH          core lease file (default /tmp/core4.lock)\n\
+           --lock-wait F        seconds to wait for the lease (default 600)\n\
+           --no-lock            do not acquire the lease (caller holds it)\n\
            --pattern PATTERN    pattern (default Telegram @username pattern)\n\
            --json PATH          write a JSON report\n\
            --expect-mentions N  extra correctness check\n\
@@ -469,6 +480,17 @@ fn parse_args() -> Result<Options, String> {
                         .map_err(|_| "--max-load expects a number".to_string())?,
                 );
             }
+            "--lock" => opts.lock = Some(PathBuf::from(next_value(&mut args, "--lock")?)),
+            "--lock-wait" => {
+                let value: f64 = next_value(&mut args, "--lock-wait")?
+                    .parse()
+                    .map_err(|_| "--lock-wait expects a number".to_string())?;
+                if value < 0.0 {
+                    return Err("--lock-wait must be non-negative".to_string());
+                }
+                opts.lock_wait = value;
+            }
+            "--no-lock" => opts.lock = None,
             "--pattern" => opts.pattern = next_value(&mut args, "--pattern")?,
             "--json" => opts.json = Some(PathBuf::from(next_value(&mut args, "--json")?)),
             "--expect-mentions" => {
@@ -1153,6 +1175,112 @@ fn scan_str(re: &regex::Regex, corpus: &BytesCorpus, threads: usize, cpus: &[usi
             .collect::<Vec<_>>()
     });
     combine(trials)
+}
+
+#[cfg(unix)]
+struct CoreLease {
+    file: File,
+}
+
+#[cfg(unix)]
+impl CoreLease {
+    fn acquire(path: &Path, wait_seconds: f64) -> Result<CoreLease, String> {
+        use std::io::{Seek, SeekFrom, Write};
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::io::AsRawFd;
+
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o666)
+            .open(path)
+            .map_err(|e| format!("open core lease {}: {e}", path.display()))?;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o666));
+        let fd = file.as_raw_fd();
+        let deadline = Instant::now() + Duration::from_secs_f64(wait_seconds);
+        loop {
+            let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if rc == 0 {
+                break;
+            }
+            let error = std::io::Error::last_os_error();
+            let busy = matches!(
+                error.raw_os_error(),
+                Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN
+            );
+            if !busy {
+                return Err(format!("lock core lease {}: {error}", path.display()));
+            }
+            if Instant::now() >= deadline {
+                let owner = lease_owner(&mut file);
+                return Err(format!(
+                    "core lease {} is busy after {wait_seconds:.0}s; owner: {owner}",
+                    path.display()
+                ));
+            }
+            eprintln!(
+                "waiting for core lease {}; owner: {}",
+                path.display(),
+                lease_owner(&mut file)
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        file.set_len(0)
+            .map_err(|e| format!("truncate core lease: {e}"))?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(|e| format!("seek core lease: {e}"))?;
+        let args = std::env::args().collect::<Vec<_>>().join(" ");
+        let host = std::env::var("HOSTNAME").unwrap_or_default();
+        let user = std::env::var("USER").unwrap_or_default();
+        writeln!(
+            file,
+            "pid={} host={} user={} cpus=0,2,4,6 started={:?} args={}",
+            std::process::id(),
+            host,
+            user,
+            std::time::SystemTime::now(),
+            args,
+        )
+        .map_err(|e| format!("write core lease: {e}"))?;
+        file.flush().map_err(|e| format!("flush core lease: {e}"))?;
+        Ok(CoreLease { file })
+    }
+}
+
+#[cfg(unix)]
+fn lease_owner(file: &mut File) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| ())
+        .and_then(|_| {
+            let mut text = String::new();
+            file.read_to_string(&mut text).map_err(|_| ())?;
+            Ok(text.trim().to_string())
+        })
+        .unwrap_or_else(|_| "<unknown>".to_string())
+}
+
+#[cfg(unix)]
+impl Drop for CoreLease {
+    fn drop(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        unsafe {
+            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+struct CoreLease;
+
+#[cfg(not(unix))]
+impl CoreLease {
+    fn acquire(_path: &Path, _wait_seconds: f64) -> Result<CoreLease, String> {
+        Ok(CoreLease)
+    }
 }
 
 fn read_load() -> f64 {

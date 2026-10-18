@@ -39,7 +39,7 @@ Benchmark commands:
     cargo run --release --example bench -- --self-test
     cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
     cargo run --release --example bench -- --mode ucs --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
-    cargo run --release --example bench -- --mode ucs --threads 4 --cpu-list 0,1,2,3 --warmup-seconds 2 --repeat 5
+    cargo run --release --example bench -- --mode ucs --threads 4 --cpu-list 0,2,4,6 --warmup-seconds 2 --repeat 5
     cargo run --release --example bench -- --mode bytes --cpu-list 2 --warmup-seconds 2 --repeat 5
     cargo run --release --example bench -- --mode str --cpu-list 2 --warmup-seconds 2 --repeat 5
 
@@ -57,8 +57,9 @@ and put `target/release/libexp_rurex.so` on `PYTHONPATH` as
 `exp_rurex.so`. The `pyproject.toml` uses maturin with the `extension-module`
 feature and is non-abi3.
 
-Benchmark runs pin workers, warm up, measure CPU time, and discard runs whose
-per-worker CPU/wall ratio falls below `--min-efficiency`. If external load
+Benchmark runs pin workers, warm up, measure CPU time, take the
+`/tmp/core4.lock` lease, and discard runs whose per-worker CPU/wall ratio falls
+below `--min-efficiency`. If external load
 prevents clean runs, the runner exits instead of reporting a contaminated
 number. It never changes the CPU governor.
 
@@ -68,6 +69,18 @@ The benchmark downloads and SHA-256 verifies the corpus into
 
 The Python harness builds and runs `examples/oracle.rs`, then compares
 `find_iter` spans with CPython `re`. It accepts `--patterns N` and `--seed S`.
+
+## Remote benchmarks on regexus
+
+Use the `web` account and `/web/benchmark/exp_rurex`. Sync with `target`,
+`var`, `.git`, virtualenvs, `__pycache__`, and built modules excluded. Build
+with `~/.cargo/bin/cargo`. The corpus must download and verify on `regexus`;
+do not copy the local corpus as a fallback.
+
+Use the first four physical P-cores, logical CPUs `0,2,4,6`; SMT siblings
+`1,3,5,7` stay idle. Take the exclusive `/tmp/core4.lock` lease for the whole
+matrix. The Rust and Python runners do this by default; a shell-level matrix
+holder passes `--no-lock` to its children.
 
 ## Repository layout
 

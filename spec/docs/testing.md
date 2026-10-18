@@ -83,7 +83,11 @@ Before every commit:
 5. **No stray files.** `git status --short` shows only intended changes.
    Corpus data, build output, local artifacts, and temporary examples stay
    under `var/` or in `.env`, both gitignored.
-6. **Benchmark portability and load.** The benchmark must not reference an
+6. **Core lease.** Two benchmark processes must not run concurrently on
+   `/tmp/core4.lock`. One acquires; the other waits or fails after
+   `--lock-wait`. A killed holder must release the lease. `--no-lock` is only
+   for a child whose parent already holds it.
+7. **Benchmark portability and load.** The benchmark must not reference an
    absolute host path or another checkout. Run `--self-test` after a fresh
    checkout or a copy outside the original source tree. A benchmark result is
    valid only if its mention count matches the independent naive count; the

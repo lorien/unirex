@@ -4,37 +4,20 @@ Open-task list. Format, statuses, and lifecycle:
 `spec/skills/task_tracking.md`. Priorities: higher number = more important;
 `-1` = deferred.
 
-## Collect a load-aware benchmark baseline
+## Optimize the DFA fast path
 
 Status: new
 Priority: 4
 
-Run the engine-only and end-to-end benchmarks on an idle laptop with
-`--cpu-list`, `--warmup-seconds`, CPU-time accounting, and
-`--min-efficiency`. The current numbers predate this protocol and are
-provisional. The last attempt was rejected because an external benchmark kept
-the machine loaded. Record CPU frequency, load, per-worker efficiency, and the
-exact CPU list. Acceptance: the requested number of clean runs for UCS, bytes,
-and str at 1 and 4 threads, and for `exp_rurex` and `re` end to end at 1
-thread, with all conditions recorded.
+Remote `regexus`, one thread on the first four physical P-cores: end-to-end
+`exp_rurex` is 0.296 s median versus 0.191 s for CPython `re`. Engine-only, the
+DFA is 0.191 s versus 0.071 s for Rust `regex` bytes. The binding overhead is
+not the main gap; the per-candidate DFA setup and transition lookup are.
+Optimize the DFA fast path and rerun both the engine-only and end-to-end
+benchmarks. Acceptance: engine-only moves substantially toward 0.071 s, and
+end-to-end moves toward the same-machine CPython `re` time of 0.191 s.
 
-References: ADR-0013
-
-## Optimize the DFA fast path
-
-Status: new
-Priority: 3
-
-The provisional end-to-end benchmark is 0.598 s median at one thread, versus
-0.501 s for CPython `re`. Engine-only, the DFA is 0.360 s versus 0.169 s for
-Rust `regex` bytes. These numbers predate the load-aware protocol; wait for
-the baseline task before optimizing. The binding overhead is not the main gap;
-the per-candidate DFA setup and transition lookup are. Optimize the DFA fast path and rerun both the
-engine-only and end-to-end benchmarks. Acceptance: engine-only moves
-substantially toward 0.169 s, end-to-end is reliably below 0.75 s, and ideally
-approaches 0.55 s.
-
-References: ADR-0010, ADR-0011, ADR-0012
+References: ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014
 
 ## Set up continuous integration
 

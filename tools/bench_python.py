@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import gzip
 import hashlib
 import json
@@ -97,6 +98,68 @@ def import_engine(engine: str):
         import re
         return re
     raise SystemExit(f"unknown engine: {engine}")
+
+
+class CoreLease:
+    """Advisory exclusive lease for the first four physical P-cores."""
+
+    def __init__(self, path: Path, wait: float):
+        self.path = path
+        self.wait = wait
+        self.file = None
+
+    def __enter__(self):
+        self.file = open(self.path, "a+", encoding="utf-8")
+        try:
+            os.chmod(self.path, 0o666)
+        except OSError:
+            pass
+        deadline = time.monotonic() + self.wait
+        while True:
+            try:
+                fcntl.flock(self.file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                owner = self._owner()
+                if time.monotonic() >= deadline:
+                    raise SystemExit(
+                        f"core lease {self.path} is busy after {self.wait:.0f}s; "
+                        f"owner: {owner}"
+                    )
+                print(f"waiting for core lease {self.path}; owner: {owner}", file=sys.stderr)
+                time.sleep(1)
+        self.file.seek(0)
+        self.file.truncate()
+        json.dump(
+            {
+                "user": os.environ.get("USER", ""),
+                "pid": os.getpid(),
+                "host": platform.node(),
+                "cpus": [0, 2, 4, 6],
+                "start": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "command": " ".join(sys.argv),
+            },
+            self.file,
+        )
+        self.file.flush()
+        return self
+
+    def _owner(self) -> str:
+        try:
+            self.file.seek(0)
+            value = self.file.read().strip()
+            self.file.seek(0, os.SEEK_END)
+            return value or "<unknown>"
+        except OSError:
+            return "<unknown>"
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        if self.file is not None:
+            try:
+                fcntl.flock(self.file.fileno(), fcntl.LOCK_UN)
+            finally:
+                self.file.close()
+        return False
 
 
 def compile_pattern(engine: str, pattern: str):
@@ -228,6 +291,9 @@ def main() -> int:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--cpu-list")
     parser.add_argument("--max-load", type=float)
+    parser.add_argument("--lock", type=Path, default=Path("/tmp/core4.lock"))
+    parser.add_argument("--lock-wait", type=float, default=600.0)
+    parser.add_argument("--no-lock", action="store_true")
     parser.add_argument("--pattern", default=PATTERN)
     parser.add_argument("--json", type=Path)
     args = parser.parse_args()
@@ -239,6 +305,11 @@ def main() -> int:
         raise SystemExit(
             f"load {load_before:.2f} exceeds --max-load {args.max_load:.2f}; retry when idle"
         )
+
+    lease = None
+    if not args.no_lock:
+        lease = CoreLease(args.lock, args.lock_wait)
+        lease.__enter__()
 
     path = resolve_corpus(args.corpus)
     texts = load_texts(path, args.limit)
@@ -323,6 +394,7 @@ def main() -> int:
         "ns_per_post": (median * 1e9 / len(texts)) if texts else 0.0,
         "cpu": cpu_name(),
         "python": sys.version.split()[0],
+        "lock": None if args.no_lock else str(args.lock),
     }
     print(
         f"engine={args.engine} threads={threads} posts={len(texts)} "
@@ -335,6 +407,8 @@ def main() -> int:
     if args.json:
         args.json.write_text(json.dumps(result, indent=2))
         print(f"wrote {args.json}")
+    if lease is not None:
+        lease.__exit__(None, None, None)
     return 0
 
 
