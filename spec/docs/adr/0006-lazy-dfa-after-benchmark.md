@@ -1,7 +1,7 @@
 # Lazy DFA After Benchmark
 
 Date: 2026-10-18
-Status: accepted
+Status: accepted (activated by ADR-0010)
 
 ## Context
 

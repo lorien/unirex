@@ -2,6 +2,7 @@
 
 use crate::Match;
 use crate::compile::{AssertKind, Inst, Program};
+use crate::ucs::Unit;
 
 /// Reusable PikeVM scratch buffers.
 ///
@@ -28,7 +29,7 @@ impl Scratch {
 ///
 /// When `retry_nonempty_at` is `Some(p)`, an empty match exactly at `p` is
 /// ignored, implementing Python 3.7+ empty-match iteration.
-pub(crate) fn find<U: Copy + Into<u32>>(
+pub(crate) fn find<U: Unit>(
     prog: &Program,
     scratch: &mut Scratch,
     hay: &[U],
@@ -48,9 +49,19 @@ pub(crate) fn find<U: Copy + Into<u32>>(
     }
 
     let mut matched: Option<Match> = None;
+    let mut pos = search_start;
 
-    for pos in search_start..=hay.len() {
+    while pos <= hay.len() {
         nlist.clear();
+
+        if clist.is_empty() && matched.is_none() {
+            if let Some(first) = &prog.first {
+                match first.find_next(hay, pos) {
+                    Some(next) => pos = next,
+                    None => break,
+                }
+            }
+        }
 
         if matched.is_none() {
             add_thread(clist, stack, prog, prog.start, pos, pos, hay.len());
@@ -89,6 +100,7 @@ pub(crate) fn find<U: Copy + Into<u32>>(
             break;
         }
         std::mem::swap(clist, nlist);
+        pos += 1;
     }
 
     matched

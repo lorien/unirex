@@ -92,21 +92,22 @@ downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
 `--corpus` / `RUREX_TG_DATA` for an offline copy. No other checkout is needed.
 
 Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines), and
-`at` (a `memchr` lower bound for a future prefilter).
+`at` (a `memchr` lower bound for the first-unit prefilter).
 
-Single-thread results on the full corpus, Intel i5-8350U, Rust 1.97.1:
+Full-corpus results, Intel i5-8350U, Rust 1.97.1:
 
-- `ucs`: 5.424 s.
-- `ucs`, 4 threads: 1.796 s.
-- `bytes`: 0.151 s.
-- `str`: 0.188 s.
-- `at`: 0.073 s.
+- UCS engine before prefilter, 1 thread: 5.424 s.
+- UCS engine with prefilter, 1 thread: 1.266 s.
+- UCS engine with prefilter, 4 threads: 0.413 s.
+- Rust `regex` bytes: 0.179 s.
+- Rust `regex` str: 0.215 s.
+- `memchr` `@` scan: 0.077 s.
 
-The milestone 1 PikeVM is not competitive yet. A prefilter and probably the
-lazy DFA are required; milestone 3 measures the prefilter first.
+The prefilter is 4.3x faster but the engine is still about 7x slower than the
+bytes baseline at one thread. The lazy DFA is now on the critical path.
 
-## Not in milestone 1
+## Not yet implemented
 
 Capture values, Python `\w`/`\d`/`\s` classes, Python word boundaries, `$`,
-flags, lazy repetition, the first-unit prefilter, the lazy DFA, and the PyO3
-binding. See `spec/docs/milestones.md`.
+flags, lazy repetition, the lazy DFA, and the PyO3 binding. See
+`spec/docs/milestones.md`.

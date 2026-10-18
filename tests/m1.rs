@@ -299,3 +299,37 @@ fn scratch_reuse_matches_convenience_api() {
         Some((0, 1))
     );
 }
+
+#[test]
+fn prefilter_covers_optional_prefixes_and_classes() {
+    assert_eq!(find1("a?b", "b"), Some((0, 1)));
+    assert_eq!(find1("a*b", "b"), Some((0, 1)));
+    assert_eq!(find1("(a|)b", "b"), Some((0, 1)));
+    assert_eq!(find1("(?:^a|b)", "b"), Some((0, 1)));
+    assert_eq!(find1("[a-c]+x", "zzzbx"), Some((3, 5)));
+    assert_eq!(find1("ab|cd", "xxcd"), Some((2, 4)));
+    assert_eq!(find1("[ab]c", "zzbc"), Some((2, 4)));
+    assert_eq!(find1("(a|b)+c", "xxbc"), Some((2, 4)));
+    assert_eq!(find1("(a|b)*c", "xxbc"), Some((2, 4)));
+    assert_eq!(find1("^a", "xa"), None);
+    assert_eq!(find1("a*", "baa"), Some((0, 0)));
+    assert_eq!(find1("", "abc"), Some((0, 0)));
+    assert_eq!(find1(r"\Z", "abc"), Some((3, 3)));
+    assert_eq!(find1("[^a]+", "bbb"), Some((0, 3)));
+    assert_eq!(find1(".", "\n"), None);
+}
+
+#[test]
+fn prefilter_searches_ucs2_and_ucs4_units() {
+    let re = Regex::new("@user").unwrap();
+    let two: Vec<u16> = "مرحبا @user".chars().map(|c| c as u16).collect();
+    assert_eq!(
+        re.find(Ucs::Ucs2(&two)).map(|m| (m.start(), m.end())),
+        Some((6, 11))
+    );
+    let four: Vec<u32> = "😀 @user".chars().map(|c| c as u32).collect();
+    assert_eq!(
+        re.find(Ucs::Ucs4(&four)).map(|m| (m.start(), m.end())),
+        Some((2, 7))
+    );
+}

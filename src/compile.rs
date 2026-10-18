@@ -10,6 +10,7 @@ use regex_syntax::ast::{
 };
 
 use crate::error::Error;
+use crate::ucs::Unit;
 
 const MAX_PATTERN_LEN: usize = 100_000;
 const MAX_INSTS: usize = 100_000;
@@ -23,6 +24,40 @@ pub(crate) struct Program {
     pub(crate) insts: Vec<Inst>,
     pub(crate) classes: Vec<Class>,
     pub(crate) start: usize,
+    pub(crate) first: Option<FirstSet>,
+}
+
+/// A conservative set of code units that can begin a match.
+///
+/// `None` in `Program::first` means the prefilter is disabled: the pattern can
+/// match empty, starts with a negated class, or has a first set too broad to
+/// be useful.
+#[derive(Clone, Debug)]
+pub(crate) enum FirstSet {
+    /// Exactly one code unit, searched with a fast unit scan.
+    One(u32),
+    /// A small set of inclusive ranges, searched by a scalar scan.
+    Ranges(Vec<(u32, u32)>),
+}
+
+impl FirstSet {
+    pub(crate) fn find_next<U: Unit>(&self, hay: &[U], start: usize) -> Option<usize> {
+        if start > hay.len() {
+            return None;
+        }
+        match self {
+            FirstSet::One(target) => U::find_next_unit(hay, *target, start),
+            FirstSet::Ranges(ranges) => hay[start..]
+                .iter()
+                .position(|unit| {
+                    let code_point = (*unit).into();
+                    ranges
+                        .iter()
+                        .any(|&(lo, hi)| code_point >= lo && code_point <= hi)
+                })
+                .map(|index| start + index),
+        }
+    }
 }
 
 /// One NFA instruction.
@@ -246,10 +281,12 @@ impl Compiler {
             });
         }
         self.insts.push(Inst::Match);
+        let first = first_set(&self.insts, &self.classes, 0);
         Ok(Program {
             insts: self.insts,
             classes: self.classes,
             start: 0,
+            first,
         })
     }
 
@@ -545,6 +582,73 @@ impl Compiler {
                 Ok(())
             }
         }
+    }
+}
+
+const MAX_FIRST_UNITS: u64 = 1024;
+const MAX_FIRST_RANGES: usize = 16;
+
+fn first_set(insts: &[Inst], classes: &[Class], start: usize) -> Option<FirstSet> {
+    let mut seen = vec![false; insts.len()];
+    let mut stack = vec![start];
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+
+    while let Some(pc) = stack.pop() {
+        if seen[pc] {
+            continue;
+        }
+        seen[pc] = true;
+        match insts[pc] {
+            Inst::Split(first, second) => {
+                stack.push(first);
+                stack.push(second);
+            }
+            Inst::Jump(target) => stack.push(target),
+            Inst::Assert(_) => {
+                if pc + 1 < insts.len() {
+                    stack.push(pc + 1);
+                }
+            }
+            Inst::Char(code_point) => ranges.push((code_point, code_point)),
+            Inst::Class(class_id) => {
+                let class = &classes[class_id];
+                if class.negated {
+                    return None;
+                }
+                ranges.extend_from_slice(&class.ranges);
+            }
+            Inst::Match => return None,
+        }
+    }
+
+    if ranges.is_empty() {
+        return None;
+    }
+    ranges.sort_unstable();
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
+    for (lo, hi) in ranges {
+        if let Some(last) = merged.last_mut() {
+            if lo <= last.1.saturating_add(1) {
+                if hi > last.1 {
+                    last.1 = hi;
+                }
+                continue;
+            }
+        }
+        merged.push((lo, hi));
+    }
+
+    let coverage: u64 = merged
+        .iter()
+        .map(|&(lo, hi)| u64::from(hi) - u64::from(lo) + 1)
+        .sum();
+    if coverage > MAX_FIRST_UNITS || merged.len() > MAX_FIRST_RANGES {
+        return None;
+    }
+    if merged.len() == 1 && merged[0].0 == merged[0].1 {
+        Some(FirstSet::One(merged[0].0))
+    } else {
+        Some(FirstSet::Ranges(merged))
     }
 }
 

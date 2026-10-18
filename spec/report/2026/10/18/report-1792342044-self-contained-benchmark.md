@@ -54,15 +54,16 @@ Raw JSON is under `var/bench-results/` and is intentionally not committed.
 
 ### Spec/ADR amendments
 
-- [open] Milestone 3 must add the prefilter for all three UCS kinds and rerun
-  this harness. The actual kind distribution makes a UCS-2-only optimization
-  insufficient.
-- [open] If the prefixed PikeVM remains far from the bytes baseline, prioritize
-  milestone 4 (lazy DFA) over milestone 2. The current benchmark points that
-  way, but the prefixed measurement should decide.
-- [open] Add a benchmark mode or option that scans only posts containing `@`
-  so the prefilter ceiling is measured directly instead of estimated from the
-  `at` count.
+- [acted] Milestone 3 must add the prefilter for all three UCS kinds and
+  rerun this harness. The prefilter was implemented and measured: 1.266 s at
+  one thread and 0.413 s at four threads.
+- [acted] If the prefixed PikeVM remains far from the bytes baseline,
+  prioritize milestone 4 (lazy DFA) over milestone 2. It remains far: 1.266 s
+  versus 0.179 s. ADR-0010 records the decision and milestone 4 is now
+  priority 4.
+- [acted] Add a benchmark mode that scans only posts containing `@`. The
+  prefilter now skips directly to `@` candidates inside each post, which is
+  stronger than a post-level mode; the `at` mode remains the lower bound.
 - [open] The docs mention a synthetic corpus fallback, but the harness does
   not implement one. Either add it or remove the claim.
 - [open] The full 1M-post run is too heavy for ordinary CI. Run the benchmark

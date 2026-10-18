@@ -49,3 +49,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
   self-contained Telegram benchmark: corpus resolution and checksum, actual
   UCS kinds, reusable scratch, same-machine Rust baselines, and an independent
   mention-count oracle.
+- [adr/0010-lazy-dfa-required.md](adr/0010-lazy-dfa-required.md) — the
+  prefilter improves the engine 4.3x but not enough; the lazy DFA is now
+  required and milestone 4 is prioritized.

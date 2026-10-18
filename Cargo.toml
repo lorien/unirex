@@ -8,12 +8,13 @@ description = "Experimental linear-time regex engine over CPython UCS storage"
 
 [dependencies]
 regex-syntax = "0.8"
+memchr = "2.8"
+bytemuck = "1"
 
 [dev-dependencies]
 regex = "1.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 flate2 = "1"
-memchr = "2"
 ureq = "3"
 sha2 = "0.10"

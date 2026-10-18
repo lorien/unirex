@@ -10,10 +10,10 @@ Status: new
 Priority: 3
 
 Add CI that runs `cargo fmt --check`, `cargo clippy --all-targets -- -D
-warnings`, `cargo test`, and `python3 tools/python_diff.py`, plus a docs check
-for local links and referenced paths. Pin the toolchain to
-`rust-toolchain.toml` and keep the CI commands identical to the local
-commands in `spec/docs/testing.md`.
+warnings`, `cargo test`, `python3 tools/python_diff.py`, and the benchmark
+self-test, plus a docs check for local links and referenced paths. Pin the
+toolchain to `rust-toolchain.toml` and keep the CI commands identical to the
+local commands in `spec/docs/testing.md`.
 
 ## Milestone 2: Python classes, flags, captures
 
@@ -28,33 +28,20 @@ criteria are in `spec/docs/milestones.md`.
 
 References: ADR-0003, ADR-0007, ADR-0008
 
-## Milestone 3: Prefilter and prefixed benchmark
+## Milestone 4: Lazy DFA
 
 Status: new
 Priority: 4
 
-Add a false-negative-free required-first-unit prefilter to the engine and
-rerun the existing `examples/bench.rs` harness. The milestone 1 engine-only
-baseline is 5.424 s for 1M posts at 1 thread, 1.796 s at 4 threads, versus
-0.151 s for Rust `regex` bytes. About 77 percent of posts contain no `@`, so
-the prefilter can skip most of the corpus. Measure the prefixed engine and
-decide from the numbers whether the prefilter is sufficient or the lazy DFA
-is required. Keep engine-only and eventual end-to-end numbers separate.
-Protocol and corpus provenance: `spec/docs/benchmarks.md`.
-
-References: ADR-0005, ADR-0009
-
-## Milestone 4: Optional lazy DFA
-
-Status: new
-Priority: 1
-
-Only if milestone 3 justifies it: add lazy determinization over code-point
-equivalence classes, a bounded state cache, PikeVM fallback on overflow, and
-anchored PikeVM for captures. Acceptance criteria are in
+The prefilter benchmark measured 1.266 s at one thread and 0.413 s at four
+threads, versus 0.179 s for Rust `regex` bytes. The prefilter is necessary but
+not sufficient, so the lazy DFA is now required. Add lazily determinized
+states over code-point equivalence classes, a bounded state cache, PikeVM
+fallback on overflow, and anchored PikeVM for captures. Keep the first-unit
+prefilter as the candidate selector. Acceptance criteria are in
 `spec/docs/milestones.md`.
 
-References: ADR-0002, ADR-0005, ADR-0006
+References: ADR-0002, ADR-0005, ADR-0006, ADR-0010
 
 ## Milestone 5: PyO3 binding and end-to-end benchmark
 

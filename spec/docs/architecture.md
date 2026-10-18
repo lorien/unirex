@@ -144,18 +144,26 @@ remains.
 
 ## Prefilter
 
-Milestone 3 derives the possible first code points from the pattern and scans
-the UCS buffer before entering the engine. For ASCII first units in UCS-2 and
-UCS-4, a raw-byte `memchr` with unit alignment and zero-byte checks is
-effective. Multiple candidates use `memchr2` or `memchr3`, or a small set.
-Non-ASCII first units are compared as units or with a range check.
+Milestone 3 derives a conservative first-unit set from the NFA start state by
+following epsilon transitions. It is disabled when `Match` is reachable
+(nullable pattern), when a first class is negated, when the set covers more
+than 1,024 code points, or when it has more than 16 ranges.
 
-A prefilter is an optimization only. It must never produce a false negative;
-if extraction is uncertain, it is disabled for that pattern.
+When the thread list is empty and no match is pending, the PikeVM jumps to the
+next candidate instead of advancing one unit at a time. A single unit is
+searched with `memchr` over the raw unit bytes; for UCS-2 and UCS-4 a byte hit
+is checked against the full unit, so endianness and false hits inside other
+units are handled. A small range set uses a scalar scan.
+
+The prefilter is an optimization only. A false negative is a correctness bug,
+so uncertain extraction disables it. The full benchmark improved from 5.424 s
+to 1.266 s at one thread, which is not enough; see `benchmarks.md` and
+ADR-0010.
 
 ## Lazy DFA
 
-Milestone 4 may add a lazy DFA over code-point equivalence classes:
+Milestone 4 adds a lazy DFA over code-point equivalence classes. The prefilter
+benchmark made this the next required engine change:
 
 - Collect all class-range boundaries used by the pattern and assign
   equivalence-class IDs.

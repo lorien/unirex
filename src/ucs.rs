@@ -2,6 +2,78 @@
 
 use std::ops::Range;
 
+use memchr::memchr;
+
+/// A UCS code unit that can be searched by a first-unit prefilter.
+pub(crate) trait Unit: Copy + Into<u32> {
+    /// Find the next index at or after `start` whose unit equals `target`.
+    fn find_next_unit(hay: &[Self], target: u32, start: usize) -> Option<usize>;
+}
+
+impl Unit for u8 {
+    fn find_next_unit(hay: &[u8], target: u32, start: usize) -> Option<usize> {
+        let byte = u8::try_from(target).ok()?;
+        memchr(byte, &hay[start..]).map(|offset| start + offset)
+    }
+}
+
+impl Unit for u16 {
+    fn find_next_unit(hay: &[u16], target: u32, start: usize) -> Option<usize> {
+        if target > 0xFFFF {
+            return None;
+        }
+        if target > 0xFF {
+            return hay[start..]
+                .iter()
+                .position(|&unit| u32::from(unit) == target)
+                .map(|index| start + index);
+        }
+        let byte = target as u8;
+        let bytes: &[u8] = bytemuck::cast_slice(hay);
+        let mut offset = start * std::mem::size_of::<u16>();
+        while offset < bytes.len() {
+            let relative = memchr(byte, &bytes[offset..])?;
+            let position = offset + relative;
+            let index = position / std::mem::size_of::<u16>();
+            if index >= hay.len() {
+                return None;
+            }
+            if u32::from(hay[index]) == target {
+                return Some(index);
+            }
+            offset = position + 1;
+        }
+        None
+    }
+}
+
+impl Unit for u32 {
+    fn find_next_unit(hay: &[u32], target: u32, start: usize) -> Option<usize> {
+        if target > 0xFF {
+            return hay[start..]
+                .iter()
+                .position(|&unit| unit == target)
+                .map(|index| start + index);
+        }
+        let byte = target as u8;
+        let bytes: &[u8] = bytemuck::cast_slice(hay);
+        let mut offset = start * std::mem::size_of::<u32>();
+        while offset < bytes.len() {
+            let relative = memchr(byte, &bytes[offset..])?;
+            let position = offset + relative;
+            let index = position / std::mem::size_of::<u32>();
+            if index >= hay.len() {
+                return None;
+            }
+            if hay[index] == target {
+                return Some(index);
+            }
+            offset = position + 1;
+        }
+        None
+    }
+}
+
 /// The storage width of a UCS haystack.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UcsKind {

@@ -45,27 +45,33 @@ empty matches, anchors, multiline, dot, alternation priority, captures,
 unmatched groups, and zero-width stepping. Every remaining divergence is
 documented in `spec/docs/semantics.md`.
 
-## Milestone 3: Prefilter and first benchmark
+## Milestone 3: Prefilter and benchmark
 
-- Required-first-unit extraction from the lowered program.
-- A false-negative-free UCS scan before entering the engine.
-- Benchmark the Telegram corpus in UCS-2 and a synthetic corpus when the real
-  one is unavailable.
-- Decide from the numbers whether the PikeVM is fast enough or a lazy DFA is
-  needed.
+Status: implemented.
 
-Acceptance: no prefilter false negatives in fuzz tests; engine-only and
-end-to-end numbers are reported separately; the decision for milestone 4 is
-recorded in an ADR.
+- Conservative first-unit extraction from the lowered program.
+- False-negative-free candidate skipping for UCS-1, UCS-2, and UCS-4.
+- Full-corpus benchmark using the actual CPython kind of each post, plus
+  same-machine Rust `regex` bytes and str baselines and a `memchr` lower
+  bound.
 
-## Milestone 4: Optional lazy DFA
+Results: 5.424 s before the prefilter, 1.266 s after at one thread, 0.413 s at
+four threads. Rust `regex` bytes is 0.179 s. The prefilter is necessary but
+not sufficient.
 
-Only if milestone 3 says it is needed:
+Acceptance: differential suites pass with no prefilter false negatives;
+engine-only and end-to-end numbers are reported separately; ADR-0010 records
+the DFA decision.
+
+## Milestone 4: Lazy DFA
+
+Triggered by the milestone 3 benchmark and ADR-0010:
 
 - Lazy determinization over code-point equivalence classes.
 - Bounded DFA state cache with PikeVM fallback on overflow.
 - DFA for match start and end; anchored PikeVM over the matched window for
   captures.
+- Keep the first-unit prefilter as the candidate selector.
 
 Acceptance: cache cap and fallback are tested; memory stays bounded; matching
 results are identical to the PikeVM on the differential suites; the DFA is

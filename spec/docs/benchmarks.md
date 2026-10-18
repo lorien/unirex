@@ -54,31 +54,36 @@ source, not a repository dependency.
 If the corpus is unavailable, a synthetic corpus may be used, but every
 result must be labeled synthetic.
 
-## Results: milestone 1 engine-only
+## Results
 
 Machine: Intel Core i5-8350U, 8 logical cores, Linux, Rust 1.97.1. Full
-corpus, GIL-independent Rust harness, `--repeat 3`, 1 thread unless noted.
+corpus, engine-only Rust harness, `--repeat 3`, median reported.
 
-- `ucs`, 1 thread: median 5.424 s, first 5.379 s, 334,136 mentions.
-- `ucs`, 4 threads: median 1.796 s.
-- Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
-  UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing
-  every post to UCS-2 would misrepresent about 46 percent of the corpus.
-- `bytes`, 1 thread: median 0.151 s.
-- `str`, 1 thread: median 0.188 s.
-- `at`, 1 thread: median 0.073 s.
+Without a prefilter, milestone 1:
+
+- `ucs`, 1 thread: 5.424 s.
+- `ucs`, 4 threads: 1.796 s.
+
+With the first-unit prefilter, milestone 3:
+
+- `ucs`, 1 thread: 1.266 s, first 1.275 s, 334,136 mentions.
+- `ucs`, 4 threads: 0.413 s.
+- `bytes`, 1 thread: 0.179 s, with 0.15 s to 0.18 s across runs.
+- `str`, 1 thread: 0.215 s.
+- `at`, 1 thread: 0.077 s, 346,251 marks.
+
+Kind distribution: 210,313 UCS-1 posts, 331,272 UCS-2 posts, and 458,415
+UCS-4 posts; 19.1M, 95.2M, and 176.0M code units respectively. Forcing every
+post to UCS-2 would misrepresent about 46 percent of the corpus.
 
 Interpretation:
 
-- The milestone 1 PikeVM is about 36 times slower than the Rust `regex` bytes
-  engine single-threaded, and still about 12 times slower with 4 threads.
-- About 77 percent of posts contain no `@`, so a first-unit prefilter can skip
-  most of the corpus. Even then, the remaining posts would cost roughly 1.2 s
-  at the measured per-post rate, which is slower than the mature bytes
-  baseline and unlikely to beat the end-to-end target.
-- The prefilter is necessary but probably not sufficient. The lazy DFA is
-  likely on the critical path, but milestone 3 must measure the prefixed
-  engine before that decision is recorded.
+- The prefilter is about 4.3 times faster than the unfiltered PikeVM.
+- It is still about 7 times slower than the Rust `regex` bytes engine at one
+  thread, and about 2.3 times slower with four threads.
+- The candidate scan is no longer the main cost. The remaining time is the
+  PikeVM work at each `@` candidate. A lazy DFA is required for a competitive
+  engine; ADR-0010 records that decision.
 - These are engine-only numbers. They exclude Python call overhead and result
   string construction. The final end-to-end comparison against `rurex` str is
   milestone 5.

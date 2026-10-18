@@ -14,11 +14,14 @@ patterns, and a randomized comparison against CPython `re`.
 2. **Unit tests.** `Ucs` access, kind preservation, slicing, and lone
    surrogates.
 3. **Matching tests.** Literals, `.`, explicit classes, alternation, greedy
-   repetition, anchors, grouping, and class edge cases.
+   repetition, anchors, grouping, class edge cases, and first-unit prefilter
+   cases: optional prefixes, alternation, narrow classes, anchors, and
+   nullable patterns that must fall back to the unfiltered path.
 4. **Python differential tests.** `tests/m1.rs` pins spans generated with
    CPython `re`. `tools/python_diff.py` generates random patterns from the
    supported grammar and compares `find_iter` spans on all strings of length
-   0 through 4 over `{a,b,c}`.
+   0 through 4 over `{a,b,c}`. Run it after any prefilter or search-loop
+   change: a prefilter false negative shows up as a missing match.
 5. **Rust `regex` differential tests.** A smaller common subset where Python
    and Rust agree; this is not the semantic authority.
 6. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
