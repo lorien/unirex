@@ -13,6 +13,8 @@
   do not use arrow symbols or enclosed alphanumerics.
 - Reference other documents by repository-relative path, for example
   `spec/docs/testing.md`.
+- Never include the IPv4 address of a remote benchmark server. Use its
+  hostname or alias, for example `regexus`.
 
 ## ADRs
 

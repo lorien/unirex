@@ -23,6 +23,10 @@ sync with the work.
 Do not run project commands with `sudo`; ask the owner to install system
 tools. Never commit credentials or machine-specific paths.
 
+Never write the IPv4 address of a remote benchmark server in documentation,
+reports, README files, or commit messages. Refer to the server only by its
+hostname or alias, for example `regexus`.
+
 Benchmarks on `regexus` use the first four physical P-cores, CPUs `0,2,4,6`.
 Take the exclusive `/tmp/core4.lock` lease for the whole matrix; see
 `spec/docs/benchmarks.md` and ADR-0014.
