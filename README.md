@@ -1,66 +1,29 @@
 # unirex
 
-Experimental linear-time regular-expression engine that matches directly
-against CPython's PEP 393 UCS storage: UCS-1, UCS-2, and UCS-4, with no UTF-8
-conversion in the matching path.
+An experimental linear-time regex engine that matches against CPython's PEP 393
+UCS-1/UCS-2/UCS-4 string buffers directly, with no UTF-8 transcode and no
+backtracking.
 
-Milestones 1, 3, 4, and 5 are implemented: a standalone Rust crate with a
-strict Python-compatible syntax subset, a unit-wide first-unit prefilter, a
-lazy DFA, and a PyO3 binding. On the Telegram benchmark the one-thread
-end-to-end time is at parity with CPython `re`. Milestone 2 compatibility work
-remains, so it is not a full `re` replacement.
+**Status: experimental, not a `re` replacement.** The engine implements a
+strict Python syntax subset with group-0 matching only. Python `\w`, `\d`,
+`\s`, `\b`, `$`, flags, and capture values are not implemented yet; patterns
+that use them are rejected with a positioned error rather than reinterpreted
+with Rust `regex` semantics. The one-thread end-to-end time is at parity with
+CPython `re` on the Telegram benchmark; four-thread scaling is worse than Rust
+`regex`.
 
-## Supported syntax
+## Install
 
-- Literals and escaped metacharacters.
-- `.`
-- Explicit character classes and ranges, including negation.
-- Alternation.
-- Greedy repetition: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
-- Anchors `^`, `\A`, `\Z`, `\z`.
-- Grouping; capture groups are accepted but only group 0 is exposed.
-- Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
-  octal escapes.
+Published versions are **placeholders that reserve the name** and contain no
+code:
 
-Python numeric escape rules are enforced: outside a class, `\1` and `\11`
-are backreferences and are rejected; inside a class they are octal. Octal
-values above `0o377` are rejected.
+- PyPI `unirex 0.0.1` installs no modules, so `import unirex` fails.
+- crates.io `unirex 0.0.1` exposes no items.
 
-## Rejected syntax
+They exist only so the names are not taken. The first functional release will
+be `0.1.0` or later. Until then, build from this repository.
 
-Unsupported syntax is rejected with a positioned error, never reinterpreted
-with Rust `regex` semantics:
-
-- `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`.
-- `$`.
-- Flags `i`, `m`, `s`, `x`, and inline flags.
-- Lazy repetition.
-- `\N{...}`, `\p{...}`, brace hex such as `\x{41}`.
-- Rust assertions `\b{...}`, `\<`, `\>`.
-- Class set operators `&&`, `--`, `~~`, nested classes, POSIX classes.
-- Named capture groups.
-- Backreferences, lookaround, atomic groups, possessive quantifiers,
-  conditionals, recursion.
-
-## Design
-
-Patterns are parsed with `regex-syntax`'s AST. This crate validates the strict
-Python subset and lowers the AST to a small Thompson program; it does not use
-`regex-syntax` HIR, whose classes and assertions follow Rust `regex`
-semantics. Matching is a lazy DFA over code points, fed by a packed pair
-first-unit prefilter; the PikeVM with two thread lists and a sparse visited set
-remains the fallback and group-0 engine. Group 0 is tracked without capture
-slots.
-
-Complexity is O(n * m) in haystack length and program size, with no
-backtracking. Compile size, repetition counts, class count, and class-range
-count are capped.
-
-The Python 3.7+ empty-match iteration rule is implemented: after an empty
-match at position `p`, retry at `p` requiring a non-empty match, then advance
-one code point.
-
-## Usage
+Rust:
 
 ```rust
 use unirex::{Regex, Ucs};
@@ -74,60 +37,7 @@ assert_eq!((m.start(), m.end()), (0, 2));
 `Ucs` treats every unit as one code point. UCS-2 lone surrogates are ordinary
 code points and are not paired.
 
-## Commands
-
-```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo test --release
-python3 tools/python_diff.py --patterns 1000
-cargo run --release --example bench -- --self-test
-cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
-PYTHONPATH=var/py python3 tools/test_python_binding.py
-PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
-python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
-python3 tools/telegram_report.py --results-dir var/bench-results/telegram
-```
-
-The Python differential harness generates random patterns from the supported
-subset and compares `find_iter` spans with CPython `re`.
-
-## Benchmark
-
-`examples/bench.rs` is a self-contained engine-only Telegram benchmark. It
-downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
-`--corpus` / `UNIREX_TG_DATA` for an offline copy. No other checkout is needed.
-
-Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines).
-
-On `regexus`, benchmarks use the first four physical P-cores `0,2,4,6` and
-hold the exclusive `/tmp/core4.lock` lease for the whole run.
-
-The generated public report is
-[`docs/telegram-benchmark.md`](docs/telegram-benchmark.md). It is produced by
-`tools/telegram_benchmark.py`, which runs the engine-only and Python matrices
-and then calls `tools/telegram_report.py`. The self-contained HTML twin is
-written to `docs/telegram-benchmark.html` and is gitignored.
-
-Full-corpus results on `regexus` (Intel i5-13500, first four physical P-cores
-`0,2,4,6`, one thread per core, SMT siblings idle, `/tmp/core4.lock` held):
-
-- 1 thread: UCS 0.0690 s, Rust `regex` bytes 0.0712 s, str 0.0711 s.
-- 2 threads: UCS 0.0386 s, bytes 0.0377 s, str 0.0378 s.
-- 3 threads: UCS 0.0294 s, bytes 0.0266 s, str 0.0266 s.
-- 4 threads: UCS 0.0258 s, bytes 0.0209 s, str 0.0209 s.
-
-UCS is about 3.1 percent faster than Rust `regex` bytes at one thread and
-1.24x slower at four. It scales 2.67x from one to four P-cores, while bytes
-scales 3.41x.
-
-Earlier laptop numbers were wall-clock only and are kept in
-`spec/docs/benchmarks.md` as historical.
-
-## Python binding
-
-Build the extension with maturin:
+Python:
 
 ```sh
 python3 -m venv .venv
@@ -136,35 +46,132 @@ pip install maturin
 maturin develop --release
 ```
 
-Alternatively, build with Cargo and place the shared object on `PYTHONPATH`:
-
-```sh
-cargo build --release --features extension-module
-mkdir -p var/py
-cp target/release/libunirex.so var/py/unirex.so
-PYTHONPATH=var/py python3 tools/test_python_binding.py
-```
-
-Usage:
-
 ```python
 import unirex
 
 rx = unirex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
-rx.findall("hello @alice123")
+rx.findall("hello @alice123")  # ['@alice123']
 rx.find("hello @alice123")
 rx.is_match("hello @alice123")
 ```
 
-End-to-end, one thread, GIL, full corpus, remote `regexus`:
+## Why UCS instead of UTF-8
 
-- `unirex`: median 0.1851 s, minimum 0.1830 s.
-- CPython `re`: median 0.1923 s, minimum 0.1899 s.
+CPython stores `str` as a contiguous array of UCS code units plus a `kind`
+field. An engine that matches UTF-8 must either borrow CPython's cached UTF-8
+copy or transcode; on a cold non-ASCII string the transcode is roughly 38
+percent of `rurex`'s `str` time. CPython's own `re` reads the UCS buffer and
+compares code points directly, with no encoding step.
 
-`unirex` is 3.8 percent faster than CPython `re` at the median and 3.6
-percent faster at the minimum. GIL threads 2-4 do not scale meaningfully.
+Matching the UCS buffer directly also skips UTF-8 decoding when building
+result strings and yields character offsets without conversion. On the
+Telegram corpus, 77.2 percent of posts contain no `@`, so a first-unit
+prefilter skips the bulk of the work.
 
-## Not yet implemented
+## Supported syntax
 
-Capture values, Python `\w`/`\d`/`\s` classes, Python word boundaries, `$`,
-flags, and lazy repetition. See `spec/docs/milestones.md`.
+- Literals and escaped metacharacters, `.`, and explicit character classes and
+  ranges including negation.
+- Alternation and grouping. Capture groups are accepted but only group 0 is
+  exposed.
+- Greedy repetition: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
+- Anchors `^`, `\A`, `\Z`, `\z`.
+- Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
+  octal escapes.
+
+Python numeric escape rules are enforced: outside a class, `\1` and `\11` are
+backreferences and are rejected; inside a class they are octal. Octal values
+above `0o377` are rejected.
+
+## Rejected syntax
+
+Every unsupported construct fails at compile time with a positioned error. It
+is never silently reinterpreted with Rust `regex` semantics.
+
+- `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`, and `$`.
+- Flags `i`, `m`, `s`, `x`, and inline flags.
+- Lazy repetition.
+- `\N{...}`, `\p{...}`, brace hex such as `\x{41}`.
+- Rust assertions `\b{...}`, `\<`, `\>`.
+- Class set operators `&&`, `--`, `~~`, nested classes, POSIX classes.
+- Named capture groups.
+- Backreferences, lookaround, atomic groups, possessive quantifiers,
+  conditionals, recursion.
+
+## Design
+
+Patterns are parsed with `regex-syntax`'s AST. This crate validates the strict
+Python subset and lowers the AST to a small Thompson program; it does not use
+`regex-syntax` HIR, whose classes and assertions follow Rust `regex` semantics.
+
+Matching is a lazy DFA over code points, fed by a unit-wide packed pair
+first-unit prefilter. The PikeVM, with two thread lists and a sparse visited
+set, remains the fallback and the group-0 engine. Group 0 is tracked without
+capture slots. Complexity is O(n * m) in haystack length and program size, with
+no backtracking. Compile size, repetition counts, class count, and class-range
+count are capped.
+
+The Python 3.7+ empty-match iteration rule is implemented: after an empty match
+at position `p`, retry at `p` requiring a non-empty match, then advance one
+code point.
+
+## Status
+
+| Milestone | State |
+|---|---|
+| 1. UCS haystack, Python subset, group-0 PikeVM | implemented |
+| 2. Python classes, flags, captures | planned |
+| 3. Prefilter and benchmark | implemented |
+| 4. Lazy DFA | implemented |
+| 5. PyO3 binding and end-to-end benchmark | implemented on CPython 3.13 GIL |
+| Continuous integration | not set up |
+
+Known gaps: capture values, Python `\w`/`\d`/`\s`, Python word boundaries,
+`$`, flags, lazy repetition, and verification on CPython versions other than
+3.13 and on free-threaded builds. See `spec/docs/milestones.md`.
+
+## Performance
+
+Telegram corpus, 1,000,000 posts, remote `regexus` (Intel i5-13500, first four
+physical P-cores `0,2,4,6`, SMT siblings idle), engine-only medians:
+
+| Threads | unirex (UCS) | Rust `regex` bytes |
+|---|---|---|
+| 1 | 0.0690 s | 0.0712 s |
+| 4 | 0.0258 s | 0.0209 s |
+
+UCS is about 3.1 percent faster at one thread and 1.24x slower at four; it
+scales 2.67x from one to four P-cores while bytes scales 3.41x.
+
+End-to-end Python with the GIL, full corpus, one thread: `unirex` median
+0.1851 s and minimum 0.1830 s, against CPython `re` median 0.1923 s and minimum
+0.1899 s. GIL threads 2-4 do not scale meaningfully.
+
+The full matrix, charts, and methodology are in
+[`docs/telegram-benchmark.md`](docs/telegram-benchmark.md).
+
+## Development
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo test --release
+python3 tools/python_diff.py --patterns 1000
+cargo run --release --example bench -- --self-test
+PYTHONPATH=var/py python3 tools/test_python_binding.py
+```
+
+The Python differential harness generates random patterns from the supported
+subset and compares `find_iter` spans with CPython `re`. The engine-only
+benchmark downloads the corpus into `var/bench-data/`, verifies its SHA-256,
+and accepts `--corpus` or `UNIREX_TG_DATA` for an offline copy.
+
+`spec/docs/` is the source of truth for the design, semantics, milestones,
+benchmark protocol, and conventions; start at
+[`spec/docs/index.md`](spec/docs/index.md). Working agreements and the task list
+are in `spec/skills/` and `spec/docs/plan.md`.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
