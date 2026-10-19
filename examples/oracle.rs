@@ -8,7 +8,7 @@
 
 use std::io::{self, BufRead};
 
-use unirex::{Regex, Scratch, Ucs};
+use unirex::{Pattern, Scratch, Ucs};
 
 fn parse_points(field: &str) -> Vec<u32> {
     field
@@ -18,7 +18,7 @@ fn parse_points(field: &str) -> Vec<u32> {
         .collect()
 }
 
-fn spans(re: &Regex, scratch: &mut Scratch, ucs: Ucs<'_>) -> String {
+fn spans(re: &Pattern, scratch: &mut Scratch, ucs: Ucs<'_>) -> String {
     let width = 2 * (re.group_count() + 1);
     let mut slots = vec![usize::MAX; width];
     let found: Vec<unirex::Match> = re.find_iter_with(scratch, ucs).collect();
@@ -57,7 +57,7 @@ fn main() {
             println!("BADLINE");
             continue;
         };
-        let re = match Regex::new(pattern) {
+        let re = match Pattern::new(pattern) {
             Ok(re) => re,
             Err(err) => {
                 println!("ERR {err}");

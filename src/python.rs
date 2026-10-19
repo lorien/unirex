@@ -13,7 +13,7 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyList, PyString, PyTuple};
 
-use crate::{Match as CoreMatch, Regex as CoreRegex, Scratch, Ucs};
+use crate::{Match as CoreMatch, Pattern as CorePattern, Scratch, Ucs};
 
 /// Long haystacks release the GIL around the scan. Short strings stay
 /// GIL-held, matching CPython `re` and the `rurex` short-string path.
@@ -30,14 +30,14 @@ thread_local! {
 }
 
 /// A compiled pattern exposed to Python.
-#[pyclass(name = "Regex", module = "unirex")]
-pub struct PyRegex {
-    inner: CoreRegex,
+#[pyclass(name = "Pattern", module = "unirex")]
+pub struct PyPattern {
+    inner: CorePattern,
     /// Stable identity used to match a thread-local scratch to this pattern.
     id: u64,
 }
 
-impl PyRegex {
+impl PyPattern {
     fn take_scratch(&self) -> Scratch {
         let id = self.id;
         let found = SCRATCHES.try_with(|cell| {
@@ -63,7 +63,7 @@ impl PyRegex {
     }
 }
 
-impl Drop for PyRegex {
+impl Drop for PyPattern {
     fn drop(&mut self) {
         let id = self.id;
         let _ = SCRATCHES.try_with(|cell| {
@@ -73,12 +73,12 @@ impl Drop for PyRegex {
 }
 
 #[pymethods]
-impl PyRegex {
+impl PyPattern {
     #[new]
-    fn new(pattern: &str) -> PyResult<PyRegex> {
-        let inner = CoreRegex::new(pattern)
+    fn new(pattern: &str) -> PyResult<PyPattern> {
+        let inner = CorePattern::new(pattern)
             .map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
-        Ok(PyRegex {
+        Ok(PyPattern {
             inner,
             id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
         })
@@ -413,12 +413,12 @@ impl PyRegex {
     }
 
     fn __repr__(&self) -> String {
-        "unirex.Regex".to_string()
+        "unirex.Pattern".to_string()
     }
 }
 
 fn collect_spans(
-    regex: &CoreRegex,
+    regex: &CorePattern,
     scratch: &mut Scratch,
     ucs: Ucs<'_>,
     py: Python<'_>,
@@ -440,7 +440,7 @@ fn collect_spans(
 /// Collect match spans and their capture slots, releasing the GIL for long
 /// haystacks.
 fn collect_spans_and_slots(
-    regex: &CoreRegex,
+    regex: &CorePattern,
     scratch: &mut Scratch,
     ucs: Ucs<'_>,
     py: Python<'_>,
@@ -559,10 +559,197 @@ fn py_ucs<'a>(text: &'a Bound<'_, PyString>) -> PyResult<Ucs<'a>> {
     }
 }
 
-#[pyfunction]
-fn compile(pattern: &str) -> PyResult<PyRegex> {
-    PyRegex::new(pattern)
+/// Flag values matching CPython's `re` module.
+const FLAG_IGNORECASE: u32 = 2;
+const FLAG_LOCALE: u32 = 4;
+const FLAG_MULTILINE: u32 = 8;
+const FLAG_DOTALL: u32 = 16;
+const FLAG_UNICODE: u32 = 32;
+const FLAG_VERBOSE: u32 = 64;
+const FLAG_DEBUG: u32 = 128;
+const FLAG_ASCII: u32 = 256;
+
+/// Translate `re` flags into an inline flag prefix.
+///
+/// Unicode semantics are already the default, so `UNICODE` is a no-op. Flags
+/// this engine cannot honour are rejected rather than ignored.
+fn flags_prefix(flags: u32) -> PyResult<String> {
+    if flags & FLAG_LOCALE != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "LOCALE flag is not supported",
+        ));
+    }
+    if flags & FLAG_DEBUG != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "DEBUG flag is not supported",
+        ));
+    }
+    if flags & FLAG_ASCII != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "ASCII flag is not supported: classes follow CPython's Unicode tables",
+        ));
+    }
+    let mut prefix = String::new();
+    if flags & FLAG_IGNORECASE != 0 {
+        prefix.push('i');
+    }
+    if flags & FLAG_MULTILINE != 0 {
+        prefix.push('m');
+    }
+    if flags & FLAG_DOTALL != 0 {
+        prefix.push('s');
+    }
+    if flags & FLAG_VERBOSE != 0 {
+        prefix.push('x');
+    }
+    if prefix.is_empty() {
+        Ok(String::new())
+    } else {
+        Ok(format!("(?{prefix})"))
+    }
 }
+
+#[pyfunction]
+#[pyo3(signature = (pattern, flags = 0))]
+fn compile(pattern: &str, flags: u32) -> PyResult<PyPattern> {
+    let prefix = flags_prefix(flags)?;
+    if prefix.is_empty() {
+        PyPattern::new(pattern)
+    } else {
+        PyPattern::new(&format!("{prefix}{pattern}"))
+    }
+}
+
+fn compile_with(flags: u32, pattern: &str) -> PyResult<PyPattern> {
+    compile(pattern, flags)
+}
+
+macro_rules! module_fn {
+    ($name:ident, $method:ident, $pyname:literal) => {
+        #[pyfunction]
+        #[pyo3(name = $pyname, signature = (pattern, text, flags = 0))]
+        fn $name(
+            py: Python<'_>,
+            pattern: &str,
+            text: &Bound<'_, PyString>,
+            flags: u32,
+        ) -> PyResult<Option<Py<PyMatch>>> {
+            compile_with(flags, pattern)?.$method(py, text)
+        }
+    };
+}
+
+macro_rules! module_iter_fn {
+    ($name:ident, $pyname:literal) => {
+        #[pyfunction]
+        #[pyo3(name = $pyname, signature = (pattern, text, flags = 0))]
+        fn $name(
+            py: Python<'_>,
+            pattern: &str,
+            text: &Bound<'_, PyString>,
+            flags: u32,
+        ) -> PyResult<PyFindIter> {
+            compile_with(flags, pattern)?.finditer(py, text)
+        }
+    };
+}
+
+module_fn!(search, search, "search");
+module_fn!(match_fn, match_, "match");
+module_fn!(fullmatch, fullmatch, "fullmatch");
+module_iter_fn!(finditer, "finditer");
+
+#[pyfunction]
+#[pyo3(signature = (pattern, text, flags = 0))]
+fn findall(
+    py: Python<'_>,
+    pattern: &str,
+    text: &Bound<'_, PyString>,
+    flags: u32,
+) -> PyResult<Py<PyList>> {
+    compile_with(flags, pattern)?.findall(py, text)
+}
+
+#[pyfunction]
+#[pyo3(signature = (pattern, repl, text, count = 0, flags = 0))]
+fn sub(
+    py: Python<'_>,
+    pattern: &str,
+    repl: &Bound<'_, PyAny>,
+    text: &Bound<'_, PyString>,
+    count: usize,
+    flags: u32,
+) -> PyResult<Py<PyString>> {
+    compile_with(flags, pattern)?.sub(py, repl, text, count)
+}
+
+#[pyfunction]
+#[pyo3(signature = (pattern, repl, text, count = 0, flags = 0))]
+fn subn(
+    py: Python<'_>,
+    pattern: &str,
+    repl: &Bound<'_, PyAny>,
+    text: &Bound<'_, PyString>,
+    count: usize,
+    flags: u32,
+) -> PyResult<(Py<PyString>, usize)> {
+    compile_with(flags, pattern)?.subn(py, repl, text, count)
+}
+
+#[pyfunction]
+#[pyo3(signature = (pattern, text, maxsplit = 0, flags = 0))]
+fn split(
+    py: Python<'_>,
+    pattern: &str,
+    text: &Bound<'_, PyString>,
+    maxsplit: isize,
+    flags: u32,
+) -> PyResult<Py<PyList>> {
+    compile_with(flags, pattern)?.split(py, text, maxsplit)
+}
+
+/// Escape a string the way CPython's `re.escape` does.
+#[pyfunction]
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let special = matches!(
+            ch,
+            '(' | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '?'
+                | '*'
+                | '+'
+                | '-'
+                | '|'
+                | '^'
+                | '$'
+                | '\\'
+                | '.'
+                | '&'
+                | '~'
+                | '#'
+                | ' '
+                | '\t'
+                | '\n'
+                | '\r'
+                | '\x0b'
+                | '\x0c'
+        );
+        if special {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// No-op: this engine keeps no pattern cache.
+#[pyfunction]
+fn purge() {}
 
 /// A single match with its capture spans.
 #[pyclass(name = "Match", module = "unirex")]
@@ -680,7 +867,7 @@ impl PyMatch {
     }
 }
 
-/// Iterator over matches produced by [`PyRegex::finditer`].
+/// Iterator over matches produced by [`PyPattern::finditer`].
 ///
 /// Spans and capture slots are collected up front, so iteration itself is
 /// cheap and does not hold the GIL beyond building each `Match`.
@@ -745,12 +932,38 @@ fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
 #[pymodule]
 fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add_class::<PyRegex>()?;
+    m.add_class::<PyPattern>()?;
     m.add_class::<PyMatch>()?;
     m.add_class::<PyFindIter>()?;
     m.add("error", m.py().get_type::<Error>())?;
     m.add("PatternError", m.py().get_type::<Error>())?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;
+    m.add_function(wrap_pyfunction!(search, m)?)?;
+    m.add_function(wrap_pyfunction!(match_fn, m)?)?;
+    m.add_function(wrap_pyfunction!(fullmatch, m)?)?;
+    m.add_function(wrap_pyfunction!(findall, m)?)?;
+    m.add_function(wrap_pyfunction!(finditer, m)?)?;
+    m.add_function(wrap_pyfunction!(sub, m)?)?;
+    m.add_function(wrap_pyfunction!(subn, m)?)?;
+    m.add_function(wrap_pyfunction!(split, m)?)?;
+    m.add_function(wrap_pyfunction!(escape, m)?)?;
+    m.add_function(wrap_pyfunction!(purge, m)?)?;
+    m.add("NOFLAG", 0u32)?;
+    m.add("IGNORECASE", FLAG_IGNORECASE)?;
+    m.add("I", FLAG_IGNORECASE)?;
+    m.add("LOCALE", FLAG_LOCALE)?;
+    m.add("L", FLAG_LOCALE)?;
+    m.add("MULTILINE", FLAG_MULTILINE)?;
+    m.add("M", FLAG_MULTILINE)?;
+    m.add("DOTALL", FLAG_DOTALL)?;
+    m.add("S", FLAG_DOTALL)?;
+    m.add("UNICODE", FLAG_UNICODE)?;
+    m.add("U", FLAG_UNICODE)?;
+    m.add("VERBOSE", FLAG_VERBOSE)?;
+    m.add("X", FLAG_VERBOSE)?;
+    m.add("DEBUG", FLAG_DEBUG)?;
+    m.add("ASCII", FLAG_ASCII)?;
+    m.add("A", FLAG_ASCII)?;
     Ok(())
 }
 

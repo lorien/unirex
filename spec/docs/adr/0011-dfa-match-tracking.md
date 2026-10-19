@@ -24,7 +24,7 @@ must remain correct on every supported test case.
 - Resolve `Start` from whether the candidate is at position zero. Keep `End`
   assertions pending while the position is not the end, then resolve them in a
   final closure at the end of the haystack.
-- Store the state and transition cache in `Scratch`, not in `Regex`, so threads
+- Store the state and transition cache in `Scratch`, not in `Pattern`, so threads
   do not contend. Cap the state cache at 4,096 states.
 - On cache overflow, class-count overflow, or an out-of-contract UCS-4 unit,
   disable the DFA for that scratch and fall back to the PikeVM.

@@ -26,7 +26,7 @@ remaining Python classes and flags remain.
    first-unit set. The PikeVM remains the fallback, the capture engine, and the
    general matcher.
 
-Compilation is a pure function of the pattern. A compiled `Regex` is immutable
+Compilation is a pure function of the pattern. A compiled `Pattern` is immutable
 and can be reused across haystacks and threads.
 
 ## Python dialect adapter
@@ -61,7 +61,7 @@ The public haystack type is an enum, not a trait object:
 It exposes `len()` in code units, `get(i) -> u32`, `kind()`, and slicing by
 character index for building results. `get` widens a unit to `u32`. The hot
 search loop is monomorphized for the three unit types by dispatching once in
-`Regex::find_from`. It is never dispatched per character.
+`Pattern::find_from`. It is never dispatched per character.
 
 The core crate accepts safe slices only. The unsafe work of deriving those
 slices from a Python `str` belongs to the binding (milestone 5) and is
@@ -122,7 +122,7 @@ backtracking.
 
 ### Reusable scratch
 
-`Regex::scratch()` allocates a `Scratch` holding the two thread lists, their
+`Pattern::scratch()` allocates a `Scratch` holding the two thread lists, their
 visited sets, and the epsilon-closure stack. `find_with`, `is_match_with`, and
 `find_iter_with` reuse it across searches. The convenience `find` and
 `find_iter` allocate a temporary `Scratch` per call.
@@ -145,7 +145,7 @@ The lazy DFA tracks group 0 only, which is what keeps its state space small:
 `Save` instructions are epsilon edges and never enter a DFA state. Group spans
 are recovered afterwards, over the match span alone.
 
-`Regex::captures` runs a bounded backtracker anchored at the known match start
+`Pattern::captures` runs a bounded backtracker anchored at the known match start
 and requiring the known match end. That is fast because the span is short and
 the search is anchored, and it is bounded by an explicit step budget. When the
 budget is exhausted, or the span exceeds the backtracker limit, the same span is
@@ -234,7 +234,7 @@ the DFA scans forward from each candidate.
 - `Assert(Start)` is resolved from whether the candidate is at position zero.
   `Assert(End)` is kept pending until the final position, then resolved in a
   final closure.
-- States and transitions are cached in `Scratch`, not in `Regex`, so workers
+- States and transitions are cached in `Scratch`, not in `Pattern`, so workers
   do not contend. Transition rows are stored in one flat `Vec<u32>` indexed by
   `state_id * num_classes + class_id`, and a parallel compact match-flag array
   keeps the per-unit loop out of the state vector. The state cache is capped at
@@ -256,7 +256,7 @@ scans wider UCS storage and keeps its own DFA cache. See `benchmarks.md`.
 ## Python binding
 
 Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
-`unirex.compile(pattern)` and `unirex.Regex` with `findall`, `find`, and
+`unirex.compile(pattern)` and `unirex.Pattern` with `findall`, `find`, and
 `is_match`.
 
 - UCS access uses CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
@@ -266,10 +266,10 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   alive. Strings are immutable; no Python object is touched in a detached scan.
 - Result strings come from `PyUnicode_Substring` using match code-point
   offsets. There is no UTF-8 encode or decode in the result path.
-- Each compiled `Regex` has a stable pattern id. A thread-local cache keeps
+- Each compiled `Pattern` has a stable pattern id. A thread-local cache keeps
   one `Scratch` per pattern per thread, capped at four patterns. A call takes
   the cached scratch, scans without a lock, and returns it. Dropping the
-  `Regex` clears its current thread's entry; other threads release their entry
+  `Pattern` clears its current thread's entry; other threads release their entry
   at thread exit or when the cache evicts it. See ADR-0016.
 - `findall` appends result strings directly to a Python list instead of
   building an intermediate `Vec`.
@@ -304,7 +304,7 @@ meaningfully. See `benchmarks.md`.
 
 ## Module layout
 
-    src/lib.rs        public API, Match, Regex, Matches, MatchesWith
+    src/lib.rs        public API, Match, Pattern, Matches, MatchesWith
     src/ucs.rs        Ucs enum, kind, unit access, slicing
     src/compile.rs    Python-dialect adapter, AST validation, lowering
     src/pikevm.rs     Scratch, thread lists, epsilon closure, matching

@@ -61,17 +61,17 @@ impl Match {
 }
 
 /// A compiled pattern.
-pub struct Regex {
+pub struct Pattern {
     prog: Program,
 }
 
-impl Regex {
+impl Pattern {
     /// Compile `pattern` using the supported Python-dialect subset.
     ///
     /// Returns [`Error::Unsupported`] for syntax this milestone does not
     /// implement, including `$`, `\w`, `\b`, and the `i m s x` flags.
-    pub fn new(pattern: &str) -> Result<Regex, Error> {
-        compile::compile(pattern).map(|prog| Regex { prog })
+    pub fn new(pattern: &str) -> Result<Pattern, Error> {
+        compile::compile(pattern).map(|prog| Pattern { prog })
     }
 
     /// Allocate reusable search scratch for this pattern.
@@ -191,7 +191,7 @@ impl Regex {
 }
 
 fn advance(
-    re: &Regex,
+    re: &Pattern,
     scratch: &mut Scratch,
     hay: Ucs<'_>,
     pos: &mut usize,
@@ -208,9 +208,9 @@ fn advance(
     Some(m)
 }
 
-/// Iterator over matches returned by [`Regex::find_iter`].
+/// Iterator over matches returned by [`Pattern::find_iter`].
 pub struct Matches<'r, 'h> {
-    re: &'r Regex,
+    re: &'r Pattern,
     scratch: Scratch,
     hay: Ucs<'h>,
     pos: usize,
@@ -243,9 +243,9 @@ impl Iterator for Matches<'_, '_> {
 
 impl std::iter::FusedIterator for Matches<'_, '_> {}
 
-/// Iterator over matches returned by [`Regex::find_iter_with`].
+/// Iterator over matches returned by [`Pattern::find_iter_with`].
 pub struct MatchesWith<'r, 's, 'h> {
-    re: &'r Regex,
+    re: &'r Pattern,
     scratch: &'s mut Scratch,
     hay: Ucs<'h>,
     pos: usize,

@@ -5,7 +5,7 @@
 - Added `Inst::Save(slot)` markers around capture groups. The DFA treats them
   as epsilon edges, so capture instructions never enter a DFA state and the
   group-0 fast path is unchanged by construction.
-- Added `Program::groups`, `Regex::group_count`, and `Regex::captures`, which
+- Added `Program::groups`, `Pattern::group_count`, and `Pattern::captures`, which
   fills `2 * (groups + 1)` slots for a match the DFA already located. Unmatched
   groups are `usize::MAX` in both slots.
 - Recover group spans over the match span only, never over the haystack:

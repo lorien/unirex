@@ -7,7 +7,7 @@ use crate::ucs::Unit;
 
 /// Reusable PikeVM scratch buffers.
 ///
-/// Create one with [`crate::Regex::scratch`] and reuse it across searches to
+/// Create one with [`crate::Pattern::scratch`] and reuse it across searches to
 /// avoid allocating thread lists and the epsilon-closure stack per call.
 /// A `Scratch` is not shared between threads; give each worker its own.
 pub struct Scratch {

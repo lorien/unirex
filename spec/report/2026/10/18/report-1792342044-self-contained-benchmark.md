@@ -5,7 +5,7 @@ Ad-hoc work requested by the owner: make the benchmark portable and run it.
 ### Done
 
 - Added reusable `Scratch` search buffers to `pikevm.rs` and the public API:
-  `Regex::scratch`, `find_with`, `is_match_with`, and `find_iter_with`. The
+  `Pattern::scratch`, `find_with`, `is_match_with`, and `find_iter_with`. The
   convenience `find` and `find_iter` still allocate a temporary scratch.
   Added a reuse test across UCS-1 and UCS-2 haystacks.
 - Added `examples/bench.rs`, a self-contained engine-only benchmark:

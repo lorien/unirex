@@ -66,7 +66,14 @@ against CPython `re`.
     count is present, and writes the tracked Markdown report, the SVG charts,
     and the gitignored HTML twin. It is not part of ordinary CI because the
     full matrix is too large; it is run after a matrix completes.
-14. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+14. **CPython conformance suite.** `tests/cpython/vendored_test_re.py` is
+   CPython 3.13.5's own `test_re.py`, vendored verbatim, run against `unirex`
+   through a `re` shim. Every test that does not pass is listed in the
+   `EXPECTED` ledger with a bucket and a reason, so the suite is a compatibility
+   ledger: closing a gap means deleting its entry in the same commit. The shim
+   is process-wide, so the file runs in its own pytest invocation, and
+   `tests/re_guard.py` fails if a parity suite ever runs with a replaced `re`.
+15. **Planned follow-ups.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands
@@ -89,6 +96,8 @@ Run from the repository root:
     PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
     PYTHONPATH=var/py python3 tools/bench_captures.py --limit 200000 --repeat 3
     cargo test --release --lib -- --ignored --nocapture capture_costs
+    PYTHONPATH=var/py python3 -m pytest tests/re_guard.py -q
+    PYTHONPATH=var/py python3 -m pytest tests/cpython/vendored_test_re.py -q
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 Timing assertions use release builds. A debug-build timing test is not

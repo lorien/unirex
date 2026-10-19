@@ -5,7 +5,7 @@
 - Renamed the Rust package and library to `unirex`.
 - Renamed the Python distribution and module to `unirex`; the extension is now
   `unirex.so` and exposes `import unirex`.
-- Updated the PyO3 module name, class module string, and `Regex` repr.
+- Updated the PyO3 module name, class module string, and `Pattern` repr.
 - Updated every Rust import, example, test, Python tool, benchmark engine key,
   extension path, report renderer label, and documentation reference.
 - Removed the old name from all tracked files, including historical reports,

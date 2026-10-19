@@ -1,24 +1,24 @@
 use std::time::{Duration, Instant};
-use unirex::{Error, Match, Regex, Ucs};
+use unirex::{Error, Match, Pattern, Ucs};
 
 fn spans(iter: impl Iterator<Item = Match>) -> Vec<(usize, usize)> {
     iter.map(|m| (m.start(), m.end())).collect()
 }
 
 fn find1(pattern: &str, hay: &str) -> Option<(usize, usize)> {
-    let re = Regex::new(pattern).unwrap_or_else(|e| panic!("{pattern:?}: {e}"));
+    let re = Pattern::new(pattern).unwrap_or_else(|e| panic!("{pattern:?}: {e}"));
     let units: Vec<u8> = hay.bytes().collect();
     re.find(Ucs::Ucs1(&units)).map(|m| (m.start(), m.end()))
 }
 
 fn iter1(pattern: &str, hay: &str) -> Vec<(usize, usize)> {
-    let re = Regex::new(pattern).unwrap_or_else(|e| panic!("{pattern:?}: {e}"));
+    let re = Pattern::new(pattern).unwrap_or_else(|e| panic!("{pattern:?}: {e}"));
     let units: Vec<u8> = hay.bytes().collect();
     spans(re.find_iter(Ucs::Ucs1(&units)))
 }
 
 fn assert_rejected(pattern: &str) {
-    match Regex::new(pattern) {
+    match Pattern::new(pattern) {
         Ok(_) => panic!("expected {pattern:?} to be rejected"),
         Err(Error::Unsupported { .. }) | Err(Error::Parse(_)) => {}
         Err(err) => panic!("unexpected error for {pattern:?}: {err}"),
@@ -26,7 +26,7 @@ fn assert_rejected(pattern: &str) {
 }
 
 fn assert_unsupported(pattern: &str) {
-    match Regex::new(pattern) {
+    match Pattern::new(pattern) {
         Err(Error::Unsupported { .. }) => {}
         Ok(_) => panic!("expected {pattern:?} to be unsupported"),
         Err(err) => panic!("expected Unsupported for {pattern:?}, got {err}"),
@@ -122,7 +122,7 @@ fn search_time_is_linear_in_haystack_length() {
         return;
     }
     fn best(pattern: &str, hay: &str) -> Duration {
-        let re = Regex::new(pattern).unwrap();
+        let re = Pattern::new(pattern).unwrap();
         let units: Vec<u8> = hay.bytes().collect();
         let mut scratch = re.scratch();
         let mut fastest = Duration::MAX;
@@ -202,7 +202,7 @@ fn python_flags_lazy_repetition_and_named_groups() {
     }
 
     // Lazy repetition changes group spans, not the whole match.
-    let re = Regex::new(r"(a+?)(a+)").unwrap();
+    let re = Pattern::new(r"(a+?)(a+)").unwrap();
     let units: Vec<u8> = b"aaa".to_vec();
     let found = re.find(Ucs::Ucs1(&units)).unwrap();
     let mut slots = vec![usize::MAX; 2 * (re.group_count() + 1)];
@@ -210,13 +210,13 @@ fn python_flags_lazy_repetition_and_named_groups() {
     assert!(re.captures(&mut scratch, Ucs::Ucs1(&units), found, &mut slots));
     assert_eq!(&slots[2..], &[0, 1, 1, 3]);
 
-    let named = Regex::new(r"(?P<user>[a-z]+)").unwrap();
+    let named = Pattern::new(r"(?P<user>[a-z]+)").unwrap();
     assert_eq!(named.capture_names().collect::<Vec<_>>(), vec![("user", 1)]);
 }
 
 #[test]
 fn python_classes_work_on_wide_haystacks() {
-    let digits = Regex::new(r"\d+").unwrap();
+    let digits = Pattern::new(r"\d+").unwrap();
     let arabic2: Vec<u16> = "abc 123 \u{664}\u{665}".encode_utf16().collect();
     assert_eq!(
         spans(digits.find_iter(Ucs::Ucs2(&arabic2))),
@@ -228,7 +228,7 @@ fn python_classes_work_on_wide_haystacks() {
         vec![(4, 7), (8, 10)]
     );
 
-    let re = Regex::new(r"\w+").unwrap();
+    let re = Pattern::new(r"\w+").unwrap();
     let units2: Vec<u16> = "Привет мир".encode_utf16().collect();
     assert_eq!(
         spans(re.find_iter(Ucs::Ucs2(&units2))),
@@ -291,7 +291,7 @@ fn class_edges_match_python() {
 #[test]
 fn ucs_kinds_produce_the_same_match() {
     let pattern = "β+";
-    let re = Regex::new(pattern).unwrap();
+    let re = Pattern::new(pattern).unwrap();
 
     let two: Vec<u16> = "aββc".chars().map(|c| c as u32 as u16).collect();
     let four: Vec<u32> = "aββc".chars().map(|c| c as u32).collect();
@@ -305,7 +305,7 @@ fn ucs_kinds_produce_the_same_match() {
     );
 
     let astral: Vec<u32> = "a𐐷b".chars().map(|c| c as u32).collect();
-    let re_astral = Regex::new("𐐷").unwrap();
+    let re_astral = Pattern::new("𐐷").unwrap();
     assert_eq!(
         re_astral
             .find(Ucs::Ucs4(&astral))
@@ -318,16 +318,16 @@ fn ucs_kinds_produce_the_same_match() {
 fn ucs2_lone_surrogates_are_units() {
     let units = [b'a' as u16, 0xD800, b'b' as u16];
     let hay = Ucs::Ucs2(&units);
-    let dot = Regex::new(".").unwrap();
+    let dot = Pattern::new(".").unwrap();
     assert_eq!(dot.find(hay).map(|m| (m.start(), m.end())), Some((0, 1)));
-    let middle = Regex::new("a.b").unwrap();
+    let middle = Pattern::new("a.b").unwrap();
     assert_eq!(middle.find(hay).map(|m| (m.start(), m.end())), Some((0, 3)));
-    let non_a = Regex::new("[^a]").unwrap();
+    let non_a = Pattern::new("[^a]").unwrap();
     assert_eq!(non_a.find(hay).map(|m| (m.start(), m.end())), Some((1, 2)));
 }
 
 fn assert_same_as_rust_regex(pattern: &str, hay: &str) {
-    let ours = Regex::new(pattern).unwrap();
+    let ours = Pattern::new(pattern).unwrap();
     let reference = regex::Regex::new(pattern).unwrap();
     let units: Vec<u8> = hay.bytes().collect();
     let ours_match = ours.find(Ucs::Ucs1(&units)).map(|m| (m.start(), m.end()));
@@ -362,7 +362,7 @@ fn differential_against_rust_regex_on_the_common_subset() {
 #[test]
 fn adversarial_patterns_terminate() {
     let hay = vec![b'a'; 500];
-    let re = Regex::new("(a+)+b").unwrap();
+    let re = Pattern::new("(a+)+b").unwrap();
     let start = Instant::now();
     assert!(!re.is_match(Ucs::Ucs1(&hay)));
     assert!(
@@ -372,7 +372,7 @@ fn adversarial_patterns_terminate() {
     );
 
     let hay = vec![b'x'; 500];
-    let re = Regex::new("(x+x+)+y").unwrap();
+    let re = Pattern::new("(x+x+)+y").unwrap();
     let start = Instant::now();
     assert!(!re.is_match(Ucs::Ucs1(&hay)));
     assert!(
@@ -384,7 +384,7 @@ fn adversarial_patterns_terminate() {
 
 #[test]
 fn scratch_reuse_matches_convenience_api() {
-    let re = Regex::new("a*").unwrap();
+    let re = Pattern::new("a*").unwrap();
     let mut scratch = re.scratch();
 
     for hay in ["baa", "aaa", "xyz", ""] {
@@ -434,7 +434,7 @@ fn prefilter_covers_optional_prefixes_and_classes() {
 
 #[test]
 fn prefilter_searches_ucs2_and_ucs4_units() {
-    let re = Regex::new("@user").unwrap();
+    let re = Pattern::new("@user").unwrap();
     let two: Vec<u16> = "مرحبا @user".chars().map(|c| c as u16).collect();
     assert_eq!(
         re.find(Ucs::Ucs2(&two)).map(|m| (m.start(), m.end())),

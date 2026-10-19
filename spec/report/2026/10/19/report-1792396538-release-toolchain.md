@@ -18,7 +18,7 @@
   `unirex-0.1.0-cp313-cp313-manylinux_2_34_x86_64.whl`, 372,052 bytes,
   SHA-256 `dd4c4bf6093f6b5a80c89db6e94a993b1f38562ee7ed9514353dd7dcf9b6d916`.
 - Installed that wheel into a clean virtual environment and exercised it:
-  `unirex.__version__` is `0.1.0`, `Regex("[a-z]+").findall("abc 12 def")`
+  `unirex.__version__` is `0.1.0`, `Pattern("[a-z]+").findall("abc 12 def")`
   returns `['abc', 'def']`.
 - Rewrote `spec/docs/publishing.md`: a `Toolchain` section with the validated
   versions, the frontend-only build path with the reason, and a `Functional

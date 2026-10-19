@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use flate2::read::MultiGzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use unirex::{Regex, Scratch, Ucs};
+use unirex::{Pattern, Scratch, Ucs};
 
 const DATA_URL: &str =
     "https://github.com/lorien/rurex/releases/download/bench-data-telegram-v1/tg-1m.json.gz";
@@ -180,7 +180,7 @@ fn run() -> Result<(), String> {
                 opts.limit,
                 corpus.posts.len(),
             )?;
-            let re = Regex::new(&opts.pattern).map_err(|e| format!("pattern: {e}"))?;
+            let re = Pattern::new(&opts.pattern).map_err(|e| format!("pattern: {e}"))?;
             let threads = opts.effective_threads().min(corpus.posts.len().max(1));
             let mut scratches: Vec<_> = (0..threads).map(|_| re.scratch()).collect();
             let load_before = read_load();
@@ -1001,7 +1001,7 @@ fn chunk_bounds(posts: usize, threads: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn scan_ucs(re: &Regex, corpus: &UcsCorpus, scratches: &mut [Scratch], cpus: &[usize]) -> Trial {
+fn scan_ucs(re: &Pattern, corpus: &UcsCorpus, scratches: &mut [Scratch], cpus: &[usize]) -> Trial {
     let bounds = chunk_bounds(corpus.posts.len(), scratches.len());
     let barrier = Barrier::new(bounds.len());
     let trials = std::thread::scope(|scope| {
@@ -1561,7 +1561,7 @@ fn self_test() -> Result<(), String> {
         return Err("self-test must cover UCS-2 and UCS-4".to_string());
     }
 
-    let re = Regex::new(DEFAULT_PATTERN).map_err(|e| format!("pattern: {e}"))?;
+    let re = Pattern::new(DEFAULT_PATTERN).map_err(|e| format!("pattern: {e}"))?;
     let mut scratches = vec![re.scratch(), re.scratch()];
     let ucs = scan_ucs(&re, &ucs_corpus, &mut scratches, &[]);
     if ucs.count != 7 || ucs.posts_with != 6 {

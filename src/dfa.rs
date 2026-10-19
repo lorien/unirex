@@ -53,7 +53,7 @@ struct StateData {
 /// A lazy DFA cache.
 ///
 /// One cache belongs to one compiled pattern and one search worker. It is
-/// stored in `Scratch`, not in `Regex`, so searches on different threads do
+/// stored in `Scratch`, not in `Pattern`, so searches on different threads do
 /// not contend.
 pub(crate) struct Cache {
     ucs1: Vec<u16>,

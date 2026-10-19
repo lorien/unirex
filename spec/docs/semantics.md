@@ -26,7 +26,7 @@ Accepted:
 - Greedy `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
 - Anchors `^`, `\A`, `\Z`, `\z`.
 - Grouping: `(...)`, `(?:...)`, and capture groups. Capture values are exposed
-  through the Python `findall` method and the Rust `Regex::captures` slot API;
+  through the Python `findall` method and the Rust `Pattern::captures` slot API;
   `Match` itself still reports group 0 only.
 - Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
   octal escapes.
@@ -42,7 +42,7 @@ Accepted:
   behave like CPython.
 - Lazy repetition `*?`, `+?`, `??`, and `{n,m}?`.
 - Named groups `(?P<name>...)`, exposed through the Python `Match` API and
-  `Regex::capture_names`.
+  `Pattern::capture_names`.
 - Known divergence: with verbose mode set, `regex-syntax` strips whitespace
   inside character classes, so `[ ]` raises a parse error where Python accepts
   it. Whitespace is only stripped outside classes in CPython.

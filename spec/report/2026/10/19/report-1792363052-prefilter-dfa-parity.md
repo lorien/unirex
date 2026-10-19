@@ -16,7 +16,7 @@
   vector to read `matched`.
 - Removed the per-call scratch `Mutex`. The binding now keeps one scratch per
   pattern per thread in a capped thread-local cache keyed by a stable pattern
-  id, and clears the current thread's entry when the `Regex` is dropped.
+  id, and clears the current thread's entry when the `Pattern` is dropped.
 - Changed `findall` to append result strings directly to a `PyList` instead of
   building an intermediate `Vec<Py<PyString>>`.
 - Added scan tests for all widths, short tails, targets above `0xFF/0xFFFF/

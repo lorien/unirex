@@ -25,7 +25,7 @@ accessors, and using them avoids private offsets entirely.
   immutable, and the slices do not outlive that borrow.
 - Build result strings with `PyUnicode_Substring`, using the match's
   code-point offsets directly. This avoids UTF-8 encoding and extra copies.
-- Keep one scratch pool per compiled `Regex`. A call takes a scratch, scans,
+- Keep one scratch pool per compiled `Pattern`. A call takes a scratch, scans,
   returns it, and never locks during the scan.
 - Match under the GIL for short strings. For haystacks of at least 4,096 code
   units, release the GIL around the scan, then build result strings under the

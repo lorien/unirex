@@ -78,8 +78,12 @@ jobs:
         with:
           path: var/bench-data
           key: corpus-telegram-v1
+      - name: Install the conformance dependencies
+        run: python -m pip install --disable-pip-version-check pytest
       - name: Smoke test the binding
         run: python tools/test_python_binding.py
+      - name: CPython conformance suite
+        run: python -m pytest tests/cpython/vendored_test_re.py -q --tb=short
       - name: End-to-end benchmark, 100k posts
         run: python tools/bench_python.py --engine unirex --limit 100000 --repeat 2
 

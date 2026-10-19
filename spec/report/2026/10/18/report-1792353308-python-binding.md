@@ -21,13 +21,13 @@ References: ADR-0007
 
 ### Done
 
-- Added `src/python.rs` with `unirex.compile` and `unirex.Regex`
+- Added `src/python.rs` with `unirex.compile` and `unirex.Pattern`
   (`findall`, `find`, `is_match`).
 - UCS access uses CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
   `PyUnicode_GET_LENGTH`; no private PEP 393 offsets. `PyUnicode_READY` is
   called first for pre-3.12 interpreters.
 - Result strings come from `PyUnicode_Substring`; no UTF-8 conversion.
-- Added a per-`Regex` scratch pool. Calls take a scratch, scan without the
+- Added a per-`Pattern` scratch pool. Calls take a scratch, scan without the
   pool lock, and return it.
 - Short strings match under the GIL. Haystacks of at least 4,096 code units
   detach the GIL for the scan and build strings afterward.

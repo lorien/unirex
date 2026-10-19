@@ -29,9 +29,9 @@ be `0.1.0` or later. Until then, build from this repository.
 Rust:
 
 ```rust
-use unirex::{Regex, Ucs};
+use unirex::{Pattern, Ucs};
 
-let re = Regex::new("a+").unwrap();
+let re = Pattern::new("a+").unwrap();
 let hay = Ucs::Ucs2(&[0x61, 0x61]);
 let m = re.find(hay).unwrap();
 assert_eq!((m.start(), m.end()), (0, 2));
@@ -56,6 +56,9 @@ rx = unirex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
 rx.findall("hello @alice123")  # ['@alice123']
 rx.find("hello @alice123")
 rx.is_match("hello @alice123")
+
+unirex.match(r"(\d+)", "123x").span()   # (0, 3)
+unirex.sub(r"(\w+)@(\w+)", r"\2:\1", "me@host")  # 'host:me'
 
 grouped = unirex.compile(r"@([a-zA-Z])([a-zA-Z0-9_]{4,31})")
 grouped.groups                 # 2

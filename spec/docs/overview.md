@@ -88,7 +88,7 @@ Milestones 1, 3, 4, and 5 are implemented. The current layout is:
 - `spec/report/` — session reports.
 - `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `pyproject.toml` — crate,
   toolchain, and maturin metadata.
-- `src/lib.rs` — public API: `Ucs`, `Regex`, `Match`, `Error`, `Scratch`, and
+- `src/lib.rs` — public API: `Ucs`, `Pattern`, `Match`, `Error`, `Scratch`, and
   the `Matches` and `MatchesWith` iterators.
 - `src/ucs.rs` — the three-kind haystack view and the unit search trait.
 - `src/compile.rs` — Python-dialect adapter, AST validation, and lowering.
