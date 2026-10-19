@@ -43,10 +43,11 @@ Accepted:
 - Lazy repetition `*?`, `+?`, `??`, and `{n,m}?`.
 - Named groups `(?P<name>...)`, exposed through the Python `Match` API and
   `Regex::capture_names`.
+- Verbose mode `x`, global or scoped. ASCII whitespace and `#` comments are
+  stripped outside classes; escaped whitespace such as `\ ` stays literal.
 
 Rejected with a positioned error:
 
-- The `x` flag and every negated flag form.
 - Rust-style `(?<name>...)` group syntax.
 - `\N{...}`, `\p{...}`, and brace hex such as `\x{41}`.
 - Rust assertions `\b{...}`, `\<`, `\>`.

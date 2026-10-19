@@ -163,6 +163,36 @@ def main() -> int:
         print("GROUPINDEX MISMATCH")
         return 1
 
+    api_pattern, api_text = r"(\w+)@(\w+)", "mail me@host now"
+    ours, reference = unirex.compile(api_pattern), re.compile(api_pattern)
+    checks = [
+        ("search", lambda rx: [(m.span(), m.groups()) for m in [rx.search(api_text)] if m]),
+        ("match", lambda rx: [(m.span(), m.groups()) for m in [rx.match(api_text)] if m]),
+        ("fullmatch", lambda rx: [(m.span()) for m in [rx.fullmatch("ab@cd")] if m]),
+        ("sub", lambda rx: [rx.sub(r"\2:\1", api_text)]),
+        ("subn", lambda rx: [rx.subn("X", api_text, 1)]),
+        ("split", lambda rx: [rx.split("a b,c")]),
+        ("flags", lambda rx: [rx.findall("a b,c")]),
+    ]
+    for name, run in checks:
+        got, want = run(ours), run(reference)
+        if got != want:
+            print(f"API MISMATCH {name}: ours={got!r} re={want!r}")
+            return 1
+    verbose = unirex.compile(r"(?x) a b  # comment")
+    if verbose.findall("ab") != re.findall(r"(?x) a b  # comment", "ab"):
+        print("VERBOSE MISMATCH")
+        return 1
+    try:
+        unirex.compile("(?P<1bad>a)")
+    except unirex.error as err:
+        if err.pattern != "(?P<1bad>a)" or err.pos is None:
+            print("ERROR ATTRIBUTES MISMATCH")
+            return 1
+    else:
+        print("ERROR TYPE MISMATCH: expected unirex.error")
+        return 1
+
     print(f"python binding smoke test ok: {len(PATTERNS)} patterns")
     return 0
 

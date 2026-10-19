@@ -241,8 +241,6 @@ fn python_classes_work_on_wide_haystacks() {
 #[test]
 fn rejects_rust_dialect_and_unimplemented_python() {
     for pattern in [
-        "(?x)a",
-        "(?i)(?x)a",
         "[a&&b]",
         "[a--b]",
         "[a~~b]",
@@ -272,7 +270,7 @@ fn rejects_rust_dialect_and_unimplemented_python() {
         assert_rejected(pattern);
     }
 
-    for pattern in ["(?x)a", "(?i)(?x)a", "[a&&b]", r"\p{L}"] {
+    for pattern in ["[a&&b]", r"\p{L}", "(?<x>a)"] {
         assert_unsupported(pattern);
     }
 }

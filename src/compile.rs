@@ -334,10 +334,13 @@ struct Flags {
     ignore_case: bool,
     multiline: bool,
     dot_all: bool,
+    verbose: bool,
 }
 
 struct Compiler {
     flags: Flags,
+    /// Inside a `#` comment while verbose mode is active.
+    in_comment: bool,
     insts: Vec<Inst>,
     classes: Vec<Class>,
     total_class_ranges: usize,
@@ -352,6 +355,7 @@ impl Compiler {
     fn new() -> Compiler {
         Compiler {
             flags: Flags::default(),
+            in_comment: false,
             insts: Vec::new(),
             classes: Vec::new(),
             total_class_ranges: 0,
@@ -426,11 +430,7 @@ impl Compiler {
                         ast::Flag::CaseInsensitive => self.flags.ignore_case = value,
                         ast::Flag::MultiLine => self.flags.multiline = value,
                         ast::Flag::DotMatchesNewLine => self.flags.dot_all = value,
-                        ast::Flag::IgnoreWhitespace => {
-                            if value {
-                                return Err(unsupported("the x flag", &item.span));
-                            }
-                        }
+                        ast::Flag::IgnoreWhitespace => self.flags.verbose = value,
                         _ => return Err(unsupported("this flag", &item.span)),
                     }
                 }
@@ -481,6 +481,26 @@ impl Compiler {
             Ast::Literal(lit) => {
                 check_literal(lit)?;
                 let code_point = lit.c as u32;
+                // Escaped whitespace such as `\ ` stays literal; only verbatim
+                // whitespace is stripped.
+                if self.flags.verbose && matches!(lit.kind, LiteralKind::Verbatim) {
+                    // Python's verbose mode strips ASCII whitespace and
+                    // `#`-to-end-of-line comments, but never inside a class.
+                    if matches!(lit.c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c') {
+                        return Ok(());
+                    }
+                    if lit.c == '#' {
+                        self.in_comment = true;
+                        return Ok(());
+                    }
+                    if self.in_comment {
+                        if lit.c != '\n' {
+                            return Ok(());
+                        }
+                        self.in_comment = false;
+                        return Ok(());
+                    }
+                }
                 if self.flags.ignore_case {
                     let class = Class::new(self.case_ranges(&[(code_point, code_point)]), false);
                     let id = self.add_class(class, &lit.span)?;

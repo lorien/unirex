@@ -77,7 +77,7 @@ impl PyRegex {
     #[new]
     fn new(pattern: &str) -> PyResult<PyRegex> {
         let inner = CoreRegex::new(pattern)
-            .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))?;
+            .map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
         Ok(PyRegex {
             inner,
             id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
@@ -167,6 +167,62 @@ impl PyRegex {
             .transpose()
     }
 
+    /// Return the first match at or after position zero.
+    fn search(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Option<Py<PyMatch>>> {
+        self.match_with_position(py, text, false, false)
+    }
+
+    /// Match only at the start of `text`.
+    #[pyo3(name = "match")]
+    fn match_(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Option<Py<PyMatch>>> {
+        self.match_with_position(py, text, true, false)
+    }
+
+    /// Match the whole of `text`.
+    fn fullmatch(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyString>,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        self.match_with_position(py, text, true, true)
+    }
+
+    /// Replace matches, returning the new string.
+    #[pyo3(signature = (repl, text, count = 0))]
+    fn sub(
+        &self,
+        py: Python<'_>,
+        repl: &Bound<'_, PyAny>,
+        text: &Bound<'_, PyString>,
+        count: usize,
+    ) -> PyResult<Py<PyString>> {
+        self.sub_impl(py, repl, text, count)
+            .map(|(result, _)| result)
+    }
+
+    /// Replace matches, returning the new string and the replacement count.
+    #[pyo3(signature = (repl, text, count = 0))]
+    fn subn(
+        &self,
+        py: Python<'_>,
+        repl: &Bound<'_, PyAny>,
+        text: &Bound<'_, PyString>,
+        count: usize,
+    ) -> PyResult<(Py<PyString>, usize)> {
+        self.sub_impl(py, repl, text, count)
+    }
+
+    /// Split `text` on matches, keeping capture groups.
+    #[pyo3(signature = (text, maxsplit = 0))]
+    fn split(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyString>,
+        maxsplit: isize,
+    ) -> PyResult<Py<PyList>> {
+        self.split_impl(py, text, maxsplit)
+    }
+
     /// Iterate over matches, yielding [`PyMatch`] objects.
     fn finditer(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<PyFindIter> {
         let ucs = py_ucs(text)?;
@@ -185,6 +241,159 @@ impl PyRegex {
                 .map(|(name, index)| (name.to_string(), index))
                 .collect(),
         })
+    }
+
+    fn match_with_position(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyString>,
+        anchored_start: bool,
+        anchored_end: bool,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        let ucs = py_ucs(text)?;
+        let mut scratch = self.take_scratch();
+        let width = 2 * (self.inner.group_count() + 1);
+        let found = self.inner.find_with(&mut scratch, ucs);
+        let result = match found {
+            Some(found) => {
+                let ok = (!anchored_start || found.start() == 0)
+                    && (!anchored_end || found.end() == ucs.len());
+                if ok {
+                    let mut slots = vec![usize::MAX; width];
+                    if self.inner.captures(&mut scratch, ucs, found, &mut slots) {
+                        Some(Py::new(
+                            py,
+                            PyMatch {
+                                text: text.clone().unbind(),
+                                slots,
+                                names: self.names(),
+                            },
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        self.put_scratch(scratch);
+        Ok(result)
+    }
+
+    fn names(&self) -> Vec<(String, usize)> {
+        self.inner
+            .capture_names()
+            .map(|(name, index)| (name.to_string(), index))
+            .collect()
+    }
+
+    fn matches_with_slots(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyString>,
+    ) -> PyResult<Vec<Vec<usize>>> {
+        let ucs = py_ucs(text)?;
+        let mut scratch = self.take_scratch();
+        let width = 2 * (self.inner.group_count() + 1);
+        let found = collect_spans_and_slots(&self.inner, &mut scratch, ucs, py, width);
+        self.put_scratch(scratch);
+        Ok(found.into_iter().map(|(_, _, slots)| slots).collect())
+    }
+
+    fn sub_impl(
+        &self,
+        py: Python<'_>,
+        repl: &Bound<'_, PyAny>,
+        text: &Bound<'_, PyString>,
+        count: usize,
+    ) -> PyResult<(Py<PyString>, usize)> {
+        let all = self.matches_with_slots(py, text)?;
+        let names = self.names();
+        let hay = text.to_cow()?.into_owned();
+        let limit = if count == 0 {
+            all.len()
+        } else {
+            count.min(all.len())
+        };
+        let mut pieces: Vec<String> = Vec::new();
+        let mut previous = 0usize;
+        let mut replaced = 0usize;
+        for (position, slots) in all.iter().enumerate() {
+            let (start, end) = (slots[0], slots[1]);
+            if start == usize::MAX || end == usize::MAX {
+                continue;
+            }
+            if position >= limit {
+                break;
+            }
+            let prefix: String = char_slice(&hay, previous, start);
+            pieces.push(prefix);
+            let value = if repl.is_callable() {
+                let m = Py::new(
+                    py,
+                    PyMatch {
+                        text: text.clone().unbind(),
+                        slots: slots.clone(),
+                        names: names.clone(),
+                    },
+                )?;
+                let out = repl.call1((m,))?;
+                out.extract::<String>()?
+            } else {
+                let template = repl.extract::<String>()?;
+                expand_replacement(&template, &hay, slots, &names)
+            };
+            pieces.push(value);
+            previous = end;
+            replaced += 1;
+        }
+        pieces.push(char_slice(&hay, previous, hay.chars().count()));
+        let result = pieces.concat();
+        Ok((PyString::new(py, &result).unbind(), replaced))
+    }
+
+    fn split_impl(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyString>,
+        maxsplit: isize,
+    ) -> PyResult<Py<PyList>> {
+        let all = self.matches_with_slots(py, text)?;
+        let hay = text.to_cow()?.into_owned();
+        let list = PyList::empty(py);
+        let limit = if maxsplit <= 0 {
+            all.len()
+        } else {
+            (maxsplit as usize).min(all.len())
+        };
+        let mut previous = 0usize;
+        for (position, slots) in all.iter().enumerate() {
+            if position >= limit {
+                break;
+            }
+            let (start, end) = (slots[0], slots[1]);
+            if start == usize::MAX || end == usize::MAX {
+                continue;
+            }
+            list.append(PyString::new(py, &char_slice(&hay, previous, start)))?;
+            for index in 1..(slots.len() / 2) {
+                let (lo, hi) = (slots[2 * index], slots[2 * index + 1]);
+                let value = if lo == usize::MAX || hi == usize::MAX {
+                    None
+                } else {
+                    Some(char_slice(&hay, lo, hi))
+                };
+                list.append(value)?;
+            }
+            previous = end;
+        }
+        list.append(PyString::new(
+            py,
+            &char_slice(&hay, previous, hay.chars().count()),
+        ))?;
+        Ok(list.unbind())
     }
 
     /// Whether the pattern matches anywhere in `text`.
@@ -506,12 +715,123 @@ impl PyFindIter {
     }
 }
 
+pyo3::create_exception!(
+    unirex,
+    Error,
+    pyo3::exceptions::PyException,
+    "Pattern compilation error."
+);
+
+/// Build a `unirex.error` carrying the same attributes as `re.error`.
+fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
+    let message = err.to_string();
+    let offset = match err {
+        crate::Error::Parse(inner) => Some(inner.span().start.offset),
+        other => other.offset(),
+    };
+    let ty = py.get_type::<Error>();
+    let instance = match ty.call1((message.clone(),)) {
+        Ok(value) => value,
+        Err(err) => return err,
+    };
+    let _ = instance.setattr("msg", message);
+    let _ = instance.setattr("pattern", pattern);
+    let _ = instance.setattr("pos", offset);
+    let _ = instance.setattr("lineno", 1);
+    let _ = instance.setattr("colno", offset.map(|pos| pos + 1));
+    PyErr::from_value(instance)
+}
+
 #[pymodule]
 fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRegex>()?;
     m.add_class::<PyMatch>()?;
     m.add_class::<PyFindIter>()?;
+    m.add("error", m.py().get_type::<Error>())?;
+    m.add("PatternError", m.py().get_type::<Error>())?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;
     Ok(())
+}
+
+/// Character slice of `hay` between two code-point offsets.
+fn char_slice(hay: &str, start: usize, end: usize) -> String {
+    hay.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
+}
+
+/// Expand `\1`, `\g<name>`, and `\\` in a replacement template.
+fn expand_replacement(
+    template: &str,
+    hay: &str,
+    slots: &[usize],
+    names: &[(String, usize)],
+) -> String {
+    let mut out = String::new();
+    let mut chars = template.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('\\') => {
+                chars.next();
+                out.push('\\');
+            }
+            Some('g') => {
+                chars.next();
+                let mut name = String::new();
+                if chars.peek() == Some(&'<') {
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if c == '>' {
+                            break;
+                        }
+                        name.push(c);
+                    }
+                }
+                let index = name
+                    .parse::<usize>()
+                    .ok()
+                    .or_else(|| names.iter().find(|(n, _)| *n == name).map(|(_, i)| *i));
+                if let Some(index) = index {
+                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
+                    {
+                        if lo != usize::MAX && hi != usize::MAX {
+                            out.push_str(&char_slice(hay, lo, hi));
+                        }
+                    }
+                }
+            }
+            Some(digit) if digit.is_ascii_digit() => {
+                chars.next();
+                if let Some(index) = digit.to_digit(10) {
+                    let index = index as usize;
+                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
+                    {
+                        if lo != usize::MAX && hi != usize::MAX {
+                            out.push_str(&char_slice(hay, lo, hi));
+                        }
+                    }
+                }
+            }
+            Some('n') => {
+                chars.next();
+                out.push('\n');
+            }
+            Some('t') => {
+                chars.next();
+                out.push('\t');
+            }
+            Some(other) => {
+                chars.next();
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
