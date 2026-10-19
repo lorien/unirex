@@ -43,6 +43,9 @@ Accepted:
 - Lazy repetition `*?`, `+?`, `??`, and `{n,m}?`.
 - Named groups `(?P<name>...)`, exposed through the Python `Match` API and
   `Regex::capture_names`.
+- Known divergence: with verbose mode set, `regex-syntax` strips whitespace
+  inside character classes, so `[ ]` raises a parse error where Python accepts
+  it. Whitespace is only stripped outside classes in CPython.
 - Verbose mode `x`, global or scoped. ASCII whitespace and `#` comments are
   stripped outside classes; escaped whitespace such as `\ ` stays literal.
 
