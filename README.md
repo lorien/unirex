@@ -146,12 +146,11 @@ physical P-cores `0,2,4,6`, SMT siblings idle). Engine-only medians, measured by
 UCS is about 3.1 percent faster at one thread and 1.24x slower at four; it
 scales 2.67x from one to four P-cores while bytes scales 3.41x.
 
-End-to-end Python with the GIL, full corpus, one thread: the `unirex` PyO3
-extension (installed wheel, `rx.findall(text)` per post) takes 0.1851 s median
-and 0.1830 s minimum, against CPython `re` at 0.1923 s median and 0.1899 s
-minimum. GIL threads 2-4 do not scale meaningfully. These end-to-end rows are
-the extension called from Python, not the Rust crate, so they are not
-comparable with the engine-only table above.
+End-to-end Python with the GIL, full corpus, one thread: the `unirex` Python
+binding (installed wheel, `rx.findall(text)` per post) takes 0.1851 s median
+and 0.1830 s minimum, against stdlib `re` at 0.1923 s median and 0.1899 s
+minimum. GIL threads 2-4 do not scale meaningfully. These rows are the Python
+binding, not the Rust crate, so they are not comparable with the table above.
 
 The full matrix, charts, and methodology are in
 [`docs/telegram-benchmark.md`](docs/telegram-benchmark.md).

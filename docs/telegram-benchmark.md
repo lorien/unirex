@@ -1,67 +1,67 @@
-# Telegram @mention extraction: unirex vs CPython `re` and Rust `regex`
+# Telegram @mention extraction: Unirex python binding vs stdlib re
 
-Real-world task, measured as one `findall(text)` pass over every post in the corpus. The extension matches CPython's UCS-1, UCS-2, or UCS-4 buffer directly; there is no UTF-8 conversion in the matching path. This page reports two separate measurements, built on the same pattern and the same corpus: the PyO3 extension called from Python, compared with CPython `re`, and the Rust crate called directly, compared with the `regex` crate. They are not interchangeable and their numbers are not comparable.
+Real-world task, measured as one `findall(text)` pass over every post in the corpus. Unirex matches CPython's UCS-1, UCS-2, or UCS-4 buffer directly; there is no UTF-8 conversion in the matching path. This page reports two separate measurements on the same pattern and corpus: the python binding against the standard library `re`, and the Rust crate against the `regex` crate. They are not interchangeable and their numbers are not comparable.
 
 ## Two measurements, two processes
 
-| Measurement | Process | What is called | Included in the time |
+| Measurement | Runs in | Compared with | What the time includes |
 |---|---|---|---|
-| End-to-end (first result table) | CPython 3.13.5 with the GIL | the PyO3 extension: `import unirex`, `rx.findall(text)`, against CPython `re` | the scan, Python call overhead, list and result-string construction |
-| Engine-only (second result table) | a Rust process, `examples/bench.rs` | the Rust crate through its `Ucs` API, against the `regex` crate | only the scan, with a reused `Scratch`; no Python is involved |
+| Unirex python binding vs stdlib re | CPython 3.13.5 with the GIL | the `re` module, on the same strings | the scan, Python call overhead, list and result-string construction |
+| Unirex crate vs Rust regex | a Rust process, `examples/bench.rs` | the `regex` crate over UTF-8 | only the scan, with a reused `Scratch`; no Python is involved |
 
 ## Methodology
 
 - **Pattern** (Telegram username rules, 5 to 32 characters, `[a-zA-Z0-9_]`, starting with a letter): `@[a-zA-Z][a-zA-Z0-9_]{4,31}`
 - **Corpus**: 1,000,000 posts, 470 MB of UTF-8 text (mostly Arabic and Persian), 334,136 mentions in 186,226 posts (18.6 percent of posts). The benchmark resolves the corpus from the cache or the [bench-data-telegram-v1 release](https://github.com/lorien/rurex/releases/tag/bench-data-telegram-v1) and verifies its SHA-256 before timing.
 - **UCS storage**: the same posts occupy about 913 MB when packed as CPython UCS storage: 210,313 UCS-1, 331,272 UCS-2, and 458,415 UCS-4 posts. The engine scans these units directly.
-- **End-to-end protocol (PyO3 extension in a Python process)**: each engine and thread point runs in a fresh Python process. The process loads the corpus, compiles the pattern once, runs untimed warm-up passes over the corpus, and then performs one timed `findall` per post over its slice. Workers are pinned to distinct CPUs and released by a barrier. The reported wall time is the maximum across workers.
-- **Engine-only protocol (Rust crate, no Python)**: each post is scanned exactly once per run with a reused `Scratch`, called directly from `examples/bench.rs`. `ucs` uses the three CPython storage kinds, `bytes` uses Rust `regex::bytes` over UTF-8, and `str` uses Rust `regex` over UTF-8. An independent naive counter runs during loading and every mode must match it.
+- **Python binding protocol**: each engine and thread point runs in a fresh Python process. The process loads the corpus, compiles the pattern once, runs untimed warm-up passes over the corpus, and then performs one timed `findall` per post over its slice. Workers are pinned to distinct CPUs and released by a barrier. The reported wall time is the maximum across workers.
+- **Rust crate protocol**: each post is scanned exactly once per run with a reused `Scratch`, called directly from `examples/bench.rs`. `ucs` uses the three CPython storage kinds, `bytes` uses Rust `regex::bytes` over UTF-8, and `str` uses Rust `regex` over UTF-8. An independent naive counter runs during loading and every mode must match it.
 - **Core lease and contamination guard**: the whole matrix holds `/tmp/core4.lock`. Each point records CPU time, wall time, load, and per-CPU frequency. Runs below the efficiency floor or above the load limit are rejected and retried; a contaminated run is not published.
 - **Timing window**: load, corpus resolution, pattern compilation, and warm-up are outside the window for both engines. The measured window starts when the barrier releases and stops when the worker's slice is finished.
-- **Repeats**: published numbers are medians of 5 timed passes per point; the raw JSON records every run. Load was 0.35 to 1.27; engine-only frequency was 4.7 to 4.8 GHz; engine worker efficiency was 1.00. Python frequency samples are kept in the raw JSON as diagnostics.
+- **Repeats**: published numbers are medians of 5 timed passes per point; the raw JSON records every run. Load was 0.35 to 1.27; crate frequency was 4.7 to 4.8 GHz; crate worker efficiency was 1.00. Python frequency samples are kept in the raw JSON as diagnostics.
 - **Interpreter**: CPython 3.13.5 with the GIL. Free-threaded CPython and other interpreter versions are not measured on this page.
 
-## End-to-end: PyO3 extension called from Python
+## Unirex python binding vs stdlib re
 
-Both columns below are Python: the process imports the extension as `unirex` and calls `rx.findall(text)` per post, and the baseline is CPython's own `re` module. No Rust baseline appears in this table.
+Both columns below are Python: the process imports the installed binding as `unirex` and calls `rx.findall(text)` per post, and the baseline is CPython's own `re` module. No Rust baseline appears in this table.
 
-![End-to-end Python wall time by worker count](img/telegram_end_to_end.svg)
+![Unirex python binding vs stdlib re](img/telegram_end_to_end.svg)
 
-| Workers | unirex (PyO3) median (s) | unirex (PyO3) min (s) | CPython re median (s) | CPython re min (s) | unirex/re |
+| Workers | unirex binding median (s) | unirex binding min (s) | re median (s) | re min (s) | unirex/re |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 0.1851 | 0.1830 | 0.1923 | 0.1899 | 0.96 |
 | 2 | 0.1861 | 0.1776 | 0.1890 | 0.1881 | 0.98 |
 | 3 | 0.1924 | 0.1703 | 0.1923 | 0.1670 | 1.00 |
 | 4 | 0.1801 | 0.1617 | 0.1829 | 0.1775 | 0.98 |
 
-A ratio below 1 means `unirex` is faster. At one thread, `unirex` is 0.1851 s median and 0.1830 s minimum; CPython `re` is 0.1923 s median and 0.1899 s minimum. That is 3.8 percent faster at the median and 3.6 percent faster at the minimum.
+A ratio below 1 means the binding is faster. At one thread, `unirex` is 0.1851 s median and 0.1830 s minimum; `re` is 0.1923 s median and 0.1899 s minimum. That is 3.8 percent faster at the median and 3.6 percent faster at the minimum.
 
-The GIL prevents meaningful scaling beyond one thread. The two- to four-worker medians stay close to the one-thread time, and the minimums are noisy because each scan is short and Python result construction is serialized. The one-thread result is the meaningful end-to-end comparison on this page.
+The GIL prevents meaningful scaling beyond one thread. The two- to four-worker medians stay close to the one-thread time, and the minimums are noisy because each scan is short and Python result construction is serialized. The one-thread result is the meaningful comparison on this page.
 
-## Engine-only: Rust crate, no Python
+## Unirex crate vs Rust regex
 
-Nothing in this table runs Python. `examples/bench.rs` calls the Rust crate directly through its `Ucs` haystack API and compares it with the `regex` crate over UTF-8. The PyO3 extension is not involved and these numbers exclude Python call overhead.
+Nothing in this table runs Python. `examples/bench.rs` calls the Rust crate directly through its `Ucs` haystack API and compares it with the `regex` crate over UTF-8. The python binding is not involved and these numbers exclude Python call overhead.
 
-![Engine-only wall time by worker count](img/telegram_engine_only.svg)
+![Unirex crate vs Rust regex](img/telegram_engine_only.svg)
 
-| Workers | unirex crate, UCS (s) | regex crate, bytes (s) | regex crate, str (s) | UCS/bytes |
+| Workers | unirex crate, UCS (s) | regex bytes (s) | regex str (s) | UCS/bytes |
 |---:|---:|---:|---:|---:|
 | 1 | 0.0690 | 0.0712 | 0.0711 | 0.97 |
 | 2 | 0.0386 | 0.0377 | 0.0378 | 1.02 |
 | 3 | 0.0294 | 0.0266 | 0.0266 | 1.10 |
 | 4 | 0.0258 | 0.0209 | 0.0209 | 1.24 |
 
-Engine-only and end-to-end numbers answer different questions. At one thread, UCS is 0.0690 s median versus 0.0712 s for Rust `regex` bytes and 0.0711 s for Rust `regex` str. The UCS path is 3.1 percent faster than the bytes baseline at one thread.
+The binding and crate numbers answer different questions. At one thread, UCS is 0.0690 s median versus 0.0712 s for Rust `regex` bytes and 0.0711 s for Rust `regex` str. The UCS path is 3.1 percent faster than the bytes baseline at one thread.
 
-At four threads the picture changes: UCS is 0.0258 s versus 0.0209 s for bytes and 0.0209 s for str, or 1.24 times the bytes time. The UCS path streams about 913 MB of storage against 470 MB of UTF-8, and each worker keeps its own DFA cache. This is the remaining four-thread scaling gap. It does not change the one-thread end-to-end result.
+At four threads the picture changes: UCS is 0.0258 s versus 0.0209 s for bytes and 0.0209 s for str, or 1.24 times the bytes time. The UCS path streams about 913 MB of storage against 470 MB of UTF-8, and each worker keeps its own DFA cache. This is the remaining four-thread scaling gap. It does not change the one-thread binding result.
 
 ## Reading the numbers
 
-In the end-to-end table `unirex` is the PyO3 extension; in the engine-only table it is the Rust crate. Whenever a row is ambiguous, the interface named in its header decides what was measured.
+In the first table `unirex` is the python binding; in the second table it is the Rust crate. Whenever a row is ambiguous, the interface named in its header decides what was measured.
 
-Parity here means the one-thread end-to-end Telegram result, not general `re` compatibility. The supported dialect is still a strict subset: `\w`, `\d`, `\s`, `\b`, `$`, flags, lazy repetition, and capture values are not implemented yet, and only group 0 is exposed. A user who needs those constructs must continue to use CPython `re`.
+Parity here means the one-thread Telegram result of the python binding, not general `re` compatibility. The supported dialect is still a strict subset: `\w`, `\d`, `\s`, `\b`, `$`, flags, lazy repetition, and capture values are not implemented yet, and only group 0 is exposed. A user who needs those constructs must continue to use CPython `re`.
 
-The engine-only numbers exclude Python call overhead, list construction, and result strings. They are useful for understanding the matcher, but they are not directly comparable with the end-to-end table.
+The crate numbers exclude Python call overhead, list construction, and result strings. They are useful for understanding the matcher, but they are not directly comparable with the binding table above.
 
 ## Free-threaded Python
 

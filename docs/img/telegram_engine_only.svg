@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-label="Telegram @mentions: engine only (Rust crate)">
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-label="Unirex crate vs Rust regex">
 <rect width="100%" height="100%" fill="white"/>
-<text x="82" y="34" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#1f2328">Telegram @mentions: engine only (Rust crate)</text>
+<text x="82" y="34" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#1f2328">Unirex crate vs Rust regex</text>
 <line x1="82" y1="452.0" x2="730" y2="452.0" stroke="#d9d9d9" stroke-width="1"/>
 <text x="70" y="456.0" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#555555">0</text>
 <line x1="82" y1="355.0" x2="730" y2="355.0" stroke="#d9d9d9" stroke-width="1"/>
@@ -41,10 +41,10 @@
 <text x="798" y="82" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">unirex crate (UCS)</text>
 <line x1="756" y1="103" x2="788" y2="103" stroke="#4C72B0" stroke-width="2.6" stroke-dasharray="7 4"/>
 <circle cx="772" cy="103" r="4" fill="white" stroke="#4C72B0" stroke-width="2"/>
-<text x="798" y="107" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">regex crate bytes</text>
+<text x="798" y="107" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">regex bytes</text>
 <line x1="756" y1="128" x2="788" y2="128" stroke="#55A868" stroke-width="2.6" stroke-dasharray="2 4"/>
 <circle cx="772" cy="128" r="4" fill="white" stroke="#55A868" stroke-width="2"/>
-<text x="798" y="132" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">regex crate str</text>
+<text x="798" y="132" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">regex str</text>
 <text x="406.0" y="502" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">worker threads</text>
 <text x="18" y="258.0" text-anchor="middle" transform="rotate(-90 18 258.0)" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">wall time for 1M posts (s)</text>
 </svg>

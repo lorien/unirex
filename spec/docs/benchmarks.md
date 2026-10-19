@@ -114,7 +114,7 @@ limited by each worker scanning wider UCS storage and keeping its own DFA
 cache.
 
 End-to-end Python, same CPU lists, GIL, measured by `tools/bench_python.py`
-importing the installed PyO3 extension into a Python process:
+importing the installed python binding into a Python process:
 
 - 1 thread: `unirex` 0.1851 s median, 0.1830 s minimum; CPython `re`
   0.1923 s median, 0.1899 s minimum.
@@ -126,10 +126,10 @@ importing the installed PyO3 extension into a Python process:
   median, 0.1775 s minimum.
 
 Naming rule for result tables: never write a bare `unirex` in a column header
-or chart legend. Name the interface, `unirex (PyO3)` for the extension called
-from Python or `unirex crate` for the Rust API, and name the baselines the same
-way (`CPython re`, `regex crate bytes`). The two measurements use the same
-pattern and corpus but their numbers are not comparable.
+or chart legend. Name the interface, `unirex binding` for the python binding or
+`unirex crate` for the Rust API, and name the baselines the same way (`re`,
+`regex bytes`, `regex str`). The two measurements use the same pattern and
+corpus but their numbers are not comparable.
 
 The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
 is the end-to-end target. `unirex` is 3.8 percent faster than CPython `re`
