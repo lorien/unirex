@@ -84,8 +84,10 @@ four threads.
   prevents meaningful thread scaling.
 - [open] Verify CPython 3.10 through 3.15 and free-threaded 3.14t. Only 3.13
   GIL was tested.
-- [open] Keep the Python binding smoke test in CI and keep the full 1M-post
+- [acted] Keep the Python binding smoke test in CI and keep the full 1M-post
   benchmark out of ordinary CI.
+  Resolved: the `binding` job runs the smoke test on six interpreters and no
+  timed benchmark runs in CI.
 - [open] The Python frequency samples remain noisy; the 2-4 thread Python
   medians are reported for completeness, not as scaling evidence.
 - [acted] The marker command in `spec/skills/work.md` still contains the

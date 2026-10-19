@@ -1,5 +1,7 @@
 # unirex
 
+[![CI](https://github.com/lorien/unirex/actions/workflows/ci.yml/badge.svg)](https://github.com/lorien/unirex/actions/workflows/ci.yml)
+
 An experimental linear-time regex engine that matches against CPython's PEP 393
 UCS-1/UCS-2/UCS-4 string buffers directly, with no UTF-8 transcode and no
 backtracking.

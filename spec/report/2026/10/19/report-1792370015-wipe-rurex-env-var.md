@@ -35,13 +35,17 @@
   rename cannot leave an identifier behind, which is exactly how this variable
   survived the `exp_rurex` to `unirex` rename.
 - [acted] Fixed the marker command in `spec/skills/work.md`.
-- [open] `spec/docs/testing.md` states in the present tense that CI runs these
+- [acted] `spec/docs/testing.md` states in the present tense that CI runs these
   checks on every push, but there is no `.github/` directory and no git
   remote. Reword it or do the CI task.
-- [open] `RUREX` survived the rename because no check greps for the old name.
+  Resolved: `testing.md` now describes the real workflow, and
+  `tools/check_docs.py` fails on the retired identifier in code or docs.
+- [acted] `RUREX` survived the rename because no check greps for the old name.
   A docs/naming check should reject `exp_rurex`, `RUREX_`, and any
   project-owned identifier that does not use the `unirex` prefix; fold it into
   the CI task.
+  Resolved: the docs check rejects the retired identifiers outside reports
+  that record their removal.
 
 ### Future-task notes
 

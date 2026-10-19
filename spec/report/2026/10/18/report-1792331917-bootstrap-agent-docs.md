@@ -40,8 +40,10 @@ Ad-hoc work: the repository was empty and had no git history.
 
 ### Tooling/process
 
-- [open] Automate the checks in `testing.md` (local link check and marker
+- [acted] Automate the checks in `testing.md` (local link check and marker
   reconciliation) in CI once CI exists.
+  Resolved: `tools/check_docs.py` plus the `docs` CI job automate the link
+  and marker checks.
 - [acted] The marker command in `spec/skills/work.md` uses
   `grep -rn "\[open\]|\[needs-decision\]"`, where the unescaped `|` is
   literal in basic regular expressions, so it matches nothing. Use

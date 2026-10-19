@@ -60,8 +60,10 @@ creating `experiments/0001-*` or writing code. The proposal format is in
 
 ### Tooling/process
 
-- [open] The CI task in `plan.md` should also run the docs link check and the
+- [acted] The CI task in `plan.md` should also run the docs link check and the
   marker reconciliation from `testing.md`.
+  Resolved: the workflow has a dedicated `docs` job running
+  `tools/check_docs.py`, and the marker command it mentions is fixed.
 - [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue noted in the bootstrap report; use the `rg`
   form from `testing.md` until the upstream workflow file is fixed.

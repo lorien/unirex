@@ -33,6 +33,13 @@ Prefer the standard library for anything small.
     cargo fmt
     cargo fmt --check
     python3 tools/python_diff.py --patterns 1000
+    python3 tools/check_docs.py
+
+`.github/workflows/ci.yml` runs these on Ubuntu for every push to `main` and
+every pull request, plus a CPython 3.10 through 3.15 binding matrix and a
+`cargo publish --dry-run` of the crates.io placeholder. `spec/docs/testing.md`
+is the authoritative description; the toolchain channel is `stable`, not a
+pinned version.
 
 Benchmark commands:
 

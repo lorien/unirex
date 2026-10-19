@@ -65,6 +65,8 @@ Run from the repository root:
     cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
     cargo check --features python
     cargo build --release --features extension-module
+    python3 tools/check_docs.py
+    cargo publish --dry-run --manifest-path packaging/crates-stub/Cargo.toml
     PYTHONPATH=var/py python3 tools/test_python_binding.py
     PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram
@@ -107,9 +109,34 @@ Before every commit:
 
 ## Continuous integration
 
-CI runs the same format, lint, test, Python differential, benchmark self-test,
-and Python binding smoke test commands on every push. It does not run the full
-1M-post end-to-end benchmark.
-Tool versions are pinned in the workflow to the versions in
-`rust-toolchain.toml`. A docs check verifies local links and referenced paths
-so documentation cannot silently drift.
+`.github/workflows/ci.yml` runs on every push to `main`, on pull requests, and
+on demand. Five jobs, Ubuntu only, using the `rust-toolchain.toml` channel
+`stable`:
+
+1. **Rust.** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+   `cargo test`, `cargo test --release`, `cargo check --features python`, and a
+   `cargo publish --dry-run` of the crates.io placeholder manifest.
+2. **Binding.** A matrix over CPython 3.10 through 3.15: `maturin build
+   --release`, install the wheel, run `tools/test_python_binding.py`.
+3. **Python differential.** `tools/python_diff.py --patterns 1000` on CPython
+   3.13. It builds `examples/oracle.rs` itself.
+4. **Benchmark self-test.** `cargo run --release --example bench --
+   --self-test`, offline.
+5. **Docs.** `python3 tools/check_docs.py`.
+
+CI deliberately does not run the full 1M-post end-to-end benchmark, any timed
+benchmark, or the report renderer: those need a quiet machine and take far
+longer than a push does.
+
+The toolchain is not pinned to a version. `rust-toolchain.toml` selects
+`stable`, so a compiler release can change CI results without a repository
+change; pin it when reproducibility starts to matter more than currency.
+
+`tools/check_docs.py` is standard-library only and checks seven things: local
+Markdown links resolve, every `spec/docs/*.md` file is catalogued in
+`spec/docs/index.md`, the retired identifiers listed in the `Naming` rule of
+`spec/docs/conventions.md` do not reappear outside reports that record their
+removal, every report has a valid
+`[open]`/`[acted]`/`[needs-decision]` marker and a `## Report on task:` first
+line, every plan record has a `Status:` and `Priority:`, and the versions in
+`Cargo.toml` and `pyproject.toml` agree.

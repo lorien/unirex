@@ -31,21 +31,28 @@
 - [acted] `spec/docs/publishing.md` now mandates the `build` frontend and
   explains why a direct `setuptools.build_meta` call is wrong: it bypasses
   build isolation and silently uses the host setuptools.
-- [open] `spec/docs/testing.md` and `spec/docs/dev.md` still describe the
+- [acted] `spec/docs/testing.md` and `spec/docs/dev.md` still describe the
   Python binding as a `maturin develop` workflow only. Add the release-wheel
   check once CI exists.
+  Resolved: the `binding` CI job builds a wheel with maturin, installs it, and
+  runs the smoke test; `testing.md` and `dev.md` describe it.
 
 ### Future-task notes
 
-- [open] Nothing verifies a built wheel automatically. The clean-install check
+- [acted] Nothing verifies a built wheel automatically. The clean-install check
   in `spec/docs/publishing.md` is manual; it belongs in CI next to the binding
   smoke test.
+  Resolved: the `binding` job builds a wheel with maturin, installs it, and
+  runs the smoke test on CPython 3.10 through 3.15.
 - [open] The wheel is `manylinux_2_34`, which excludes older glibc hosts. A
   published release needs a manylinux policy decision, for example building in
   the `manylinux` container rather than on this machine.
-- [open] Only CPython 3.13 was exercised. The non-abi3 rule means each
+- [acted] Only CPython 3.13 was exercised. The non-abi3 rule means each
   supported version needs its own wheel, which is the same gap the existing
   Python-version verification task covers.
+  Partly resolved: CI now builds and smoke-tests a wheel on CPython 3.10
+  through 3.15 GIL. Free-threaded 3.14t remains with the separate
+  Python-version task.
 
 ### Tooling/process
 

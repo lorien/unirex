@@ -69,8 +69,11 @@ References: ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0007
 
 ### Tooling/process
 
-- [open] Add the CI task that runs format, clippy, tests, the Python
+- [acted] Add the CI task that runs format, clippy, tests, the Python
   differential harness, the benchmark self-test, and the docs link check.
+  Resolved: `.github/workflows/ci.yml` runs format, clippy, tests, the
+  Python differential, the benchmark self-test, the binding matrix, and the
+  docs check.
 - [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue noted in the bootstrap report; use the `rg` form
   from `testing.md` until the upstream workflow file is fixed.

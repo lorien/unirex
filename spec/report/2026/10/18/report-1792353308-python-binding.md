@@ -81,8 +81,10 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 - [open] Milestone 2: Python `\w`/`\d`/`\s`, `\b`, `$`, flags, captures, lazy
   repetition, named groups.
 - [open] Report per-kind end-to-end time and per-kind engine time.
-- [open] Keep the Python binding smoke test in CI; do not run the full 1M-post
+- [acted] Keep the Python binding smoke test in CI; do not run the full 1M-post
   end-to-end benchmark in ordinary CI.
+  Resolved: the `binding` job runs it as a CPython 3.10 through 3.15 matrix
+  from an installed wheel; the 1M-post benchmark stays out of CI.
 
 ### Tooling/process
 
