@@ -72,3 +72,6 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0016-thread-local-scratch.md](adr/0016-thread-local-scratch.md) —
   per-thread scratch reuse keyed by a stable pattern id, replacing the
   per-call `Mutex` pool.
+- [adr/0017-capture-extraction.md](adr/0017-capture-extraction.md) — capture
+  slots stay out of the DFA; group spans are recovered over the match span with
+  a bounded backtracker and a PikeVM fallback.

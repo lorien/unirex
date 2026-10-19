@@ -60,18 +60,22 @@ Python object construction both engines pay.
 - [acted] `spec/docs/semantics.md`, `spec/docs/milestones.md`, and
   `spec/docs/testing.md` no longer claim capturing is unimplemented, and the
   remaining gaps are named: match objects, `sub`, `split`, named groups.
-- [open] ADR needed for the capture strategy. The decision to keep `Save` out of
+- [acted] ADR needed for the capture strategy. The decision to keep `Save` out of
   the DFA and to prefer a bounded backtracker over the PikeVM is exactly the
   kind of tradeoff the ADR series exists for, and it is currently only recorded
   in `architecture.md` prose and this report.
+  Resolved: ADR-0017 records the decision, the rejected alternatives, and the
+  measured costs.
 
 ### Future-task notes
 
 - [open] Match objects and `finditer` are the next user-visible step; `findall`
   is now the only way to read a group.
-- [open] The PikeVM fallback path has no performance characterisation. A pattern
+- [acted] The PikeVM fallback path has no performance characterisation. A pattern
   that forces backtracking to abort, such as `(a|a)*b` over a long span, should
   be measured and documented.
+  Resolved: the ignored `capture_costs` test measures both paths at four span
+  lengths, and the numbers are in ADR-0017 and `architecture.md`.
 - [open] `captures()` re-runs extraction for every match even when the caller
   only wants spans. Rust `regex` avoids this with `find` versus `captures`; the
   Python binding now inherits the cost in `findall` because `re` semantics

@@ -293,6 +293,36 @@ pub(crate) fn capture_slots<U: Unit>(
 
 /// Bounded backtracking capture extraction over a known span.
 ///
+/// Backtracking is only attempted for spans up to this many code units.
+///
+/// The backtracker is recursive, so its stack use grows with the span. A test
+/// with a 2,000-unit span overflowed the default stack in a debug build, which
+/// makes a hard limit mandatory rather than an optimisation.
+const MAX_BACKTRACK_SPAN: usize = 1_024;
+
+/// Maximum recursion depth of the backtracker.
+///
+/// Bounds stack use independently of the span, because a deeply nested program
+/// can recurse without consuming input.
+const MAX_BACKTRACK_DEPTH: usize = 1_024;
+
+/// Absolute ceiling on backtracking steps for one match.
+///
+/// The span-scaled budget alone is not a bound: at the maximum span with a
+/// 200-instruction program it reaches about 2.6 billion steps, which is
+/// seconds of work for a single match. This cap keeps the worst case per match
+/// in the low milliseconds, after which extraction falls back to the PikeVM.
+const MAX_BACKTRACK_STEPS: usize = 1_000_000;
+
+/// Steps allowed for a span of `span` units in a program of `insts`
+/// instructions.
+fn backtrack_budget(span: usize, insts: usize) -> usize {
+    const MIN_BUDGET: usize = 100_000;
+    MIN_BUDGET
+        .max(200 * (span + 2) * insts)
+        .min(MAX_BACKTRACK_STEPS)
+}
+
 /// Returns `false` when the step budget is exhausted or the span is too long,
 /// which makes [`capture_slots`] fall back to the PikeVM. A failed search never
 /// reports a wrong span: only a successful walk of the exact span returns.
@@ -304,13 +334,11 @@ fn backtrack_slots<U: Unit>(
     slots: &mut [usize],
     trail: &mut Vec<(usize, usize)>,
 ) -> bool {
-    const MAX_SPAN: usize = 65_536;
-    const MIN_BUDGET: usize = 100_000;
     let span = end - start;
-    if span > MAX_SPAN {
+    if span > MAX_BACKTRACK_SPAN {
         return false;
     }
-    let budget = MIN_BUDGET.max(200 * (span + 2) * prog.insts.len());
+    let budget = backtrack_budget(span, prog.insts.len());
     let mut bt = Backtrack {
         prog,
         hay,
@@ -321,7 +349,7 @@ fn backtrack_slots<U: Unit>(
         budget,
         aborted: false,
     };
-    let matched = bt.step(prog.start, start);
+    let matched = bt.step(prog.start, start, 0);
     matched && !bt.aborted
 }
 
@@ -344,48 +372,52 @@ impl<U: Unit> Backtrack<'_, U> {
         }
     }
 
-    fn step(&mut self, pc: usize, pos: usize) -> bool {
+    fn step(&mut self, pc: usize, pos: usize, depth: usize) -> bool {
         if self.aborted {
             return false;
         }
-        if self.steps >= self.budget {
+        if self.steps >= self.budget || depth >= MAX_BACKTRACK_DEPTH {
             self.aborted = true;
             return false;
         }
         self.steps += 1;
         match self.prog.insts[pc] {
             Inst::Char(expected) => {
-                pos < self.end && self.hay[pos].into() == expected && self.step(pc + 1, pos + 1)
+                pos < self.end
+                    && self.hay[pos].into() == expected
+                    && self.step(pc + 1, pos + 1, depth + 1)
             }
             Inst::Class(class_id) => {
                 pos < self.end
                     && self.prog.classes[class_id].contains(self.hay[pos].into())
-                    && self.step(pc + 1, pos + 1)
+                    && self.step(pc + 1, pos + 1, depth + 1)
             }
             Inst::Split(first, second) => {
                 let mark = self.trail.len();
-                if self.step(first, pos) {
+                if self.step(first, pos, depth + 1) {
                     return true;
                 }
                 if self.aborted {
                     return false;
                 }
                 self.undo_to(mark);
-                self.step(second, pos)
+                self.step(second, pos, depth + 1)
             }
-            Inst::Jump(target) => self.step(target, pos),
+            Inst::Jump(target) => self.step(target, pos, depth + 1),
             Inst::Save(slot) => {
                 let old = self.slots[slot];
                 self.slots[slot] = pos;
                 self.trail.push((slot, old));
-                if self.step(pc + 1, pos) {
+                if self.step(pc + 1, pos, depth + 1) {
                     true
                 } else {
                     self.undo_to(self.trail.len() - 1);
                     false
                 }
             }
-            Inst::Assert(kind) => kind.holds(pos, self.hay.len()) && self.step(pc + 1, pos),
+            Inst::Assert(kind) => {
+                kind.holds(pos, self.hay.len()) && self.step(pc + 1, pos, depth + 1)
+            }
             Inst::Match => pos == self.end,
         }
     }
@@ -757,6 +789,93 @@ mod tests {
         let (span, groups) = spans_for(r"(.+)(x)", &wide).unwrap();
         assert_eq!(span, vec![0, 3]);
         assert_eq!(groups, vec![(0, 2), (2, 3)]);
+    }
+
+    #[test]
+    fn budget_is_capped() {
+        assert_eq!(backtrack_budget(0, 10), 100_000);
+        assert_eq!(backtrack_budget(32, 200), 1_000_000);
+        // The span-scaled term alone would be far larger than the cap.
+        assert_eq!(backtrack_budget(65_536, 200), MAX_BACKTRACK_STEPS);
+        assert_eq!(backtrack_budget(1_024, 200), 1_000_000);
+        assert_eq!(backtrack_budget(1_024, 1), 205_200);
+    }
+
+    /// A pattern that forces the backtracker to abort must still return correct
+    /// group spans through the PikeVM fallback.
+    #[test]
+    fn pathological_pattern_falls_back_and_stays_correct() {
+        let program = compile(r"(a|a)*b").unwrap();
+        let hay: Vec<u8> = std::iter::repeat_n(b'a', 2_000)
+            .chain(std::iter::once(b'b'))
+            .collect();
+        let mut scratch = Scratch::new(program.insts.len());
+        let found = find(&program, &mut scratch, &hay, 0, None).unwrap();
+        assert_eq!((found.start(), found.end()), (0, 2_001));
+        let mut slots = vec![usize::MAX; 2 * (program.groups + 1)];
+        assert!(
+            capture_slots(
+                &program,
+                &mut scratch,
+                &hay,
+                found.start(),
+                found.end(),
+                &mut slots
+            ),
+            "fallback produced no slots"
+        );
+        assert_eq!((slots[0], slots[1]), (0, 2_001));
+        // Python: re.search(r"(a|a)*b", "a" * 2000 + "b").span(1) == (1999, 2000)
+        assert_eq!((slots[2], slots[3]), (1_999, 2_000));
+    }
+
+    #[test]
+    #[ignore = "manual timing probe; run with --release --ignored --nocapture"]
+    fn capture_costs() {
+        fn time<F: FnMut()>(iterations: usize, mut run: F) -> std::time::Duration {
+            let start = std::time::Instant::now();
+            for _ in 0..iterations {
+                run();
+            }
+            start.elapsed() / iterations as u32
+        }
+
+        let cases: &[(usize, &str)] = &[
+            (31, r"@([a-zA-Z])([a-zA-Z0-9_]{4,31})"),
+            (1_024, r"(a|a)*b"),
+            (65_536, r"(a|a)*b"),
+            (1_000_000, r"(a|a)*b"),
+        ];
+        for &(span, pattern) in cases {
+            let program = compile(pattern).unwrap();
+            let width = 2 * (program.groups + 1);
+            let hay: Vec<u8> = if pattern.contains("(?") || pattern.starts_with('@') {
+                let mut text = String::from("@a").into_bytes();
+                text.resize(span, b'x');
+                text
+            } else {
+                let mut text = vec![b'a'; span - 1];
+                text.push(b'b');
+                text
+            };
+            let mut scratch = Scratch::new(program.insts.len());
+            let hay2 = &hay[..span.min(hay.len())];
+            let found = find(&program, &mut scratch, hay2, 0, None);
+            let mut slots = vec![usize::MAX; width];
+            let mut trail = Vec::new();
+            let (start, end) = match found {
+                Some(m) => (m.start(), m.end()),
+                None => continue,
+            };
+            let bt = time(200, || {
+                let mut s = vec![usize::MAX; width];
+                backtrack_slots(&program, hay2, start, end, &mut s, &mut trail);
+            });
+            let pike = time(20, || {
+                capture_slots_pike(&program, &mut scratch, hay2, start, end, &mut slots);
+            });
+            println!("span={span:>7} pattern={pattern:35} backtrack={bt:>10?} pike={pike:>10?}");
+        }
     }
 
     #[test]

@@ -152,6 +152,16 @@ budget is exhausted, or the span exceeds the backtracker limit, the same span is
 re-derived with the PikeVM slot machinery instead, which is linear but
 O(span * program).
 
+The backtracker is bounded three ways: spans above 1,024 units are declined, a
+step budget of `max(100_000, 200 * (span + 2) * instructions)` capped at
+1,000,000 steps stops runaway searches, and recursion is limited to 1,024
+frames because stack use otherwise grows with span and overflowed the default
+stack in testing. Any of those bounds sends the match to the PikeVM path.
+
+The fallback is linear but expensive: measured per match, 91 microseconds on a
+1,024-unit span and 91.7 milliseconds on a 1,000,000-unit span, against 715
+nanoseconds for a 31-unit span on the backtracker. See ADR-0017.
+
 The leftmost-first rule is enforced by branch order in the backtracker and by
 thread order in the PikeVM, never by post-processing spans. Capture values in
 unbounded loops are matched against Python `re` and documented if a divergence
