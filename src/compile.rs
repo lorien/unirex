@@ -153,9 +153,12 @@ impl AssertKind {
                 unicode_tables::is_word(prev.unwrap_or(0))
                     != unicode_tables::is_word(next.unwrap_or(0))
             }
+            // CPython never reports `\B` in an empty string, even though both
+            // sides are trivially non-word there.
             AssertKind::NotWordBoundary => {
-                unicode_tables::is_word(prev.unwrap_or(0))
-                    == unicode_tables::is_word(next.unwrap_or(0))
+                len > 0
+                    && unicode_tables::is_word(prev.unwrap_or(0))
+                        == unicode_tables::is_word(next.unwrap_or(0))
             }
         }
     }

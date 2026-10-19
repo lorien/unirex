@@ -23,9 +23,13 @@ against CPython `re`.
    nullable patterns that must fall back to the unfiltered path.
 4. **Python differential tests.** `tests/m1.rs` pins spans generated with
    CPython `re`. `tools/python_diff.py` generates random patterns from the
-   supported grammar and compares `find_iter` spans on all strings of length
-   0 through 4 over `{a,b,c}`. Run it after any prefilter or search-loop
-   change: a prefilter false negative shows up as a missing match.
+   supported grammar and compares every capture span, on UCS-1, UCS-2, and
+   UCS-4, over all strings up to `--max-length` built from an alphabet that
+   includes whitespace, a non-ASCII letter, an Arabic-Indic digit, and an
+   emoji. It covers classes, boundaries, `$`, flags, lazy repetition, named
+   groups, and nested groups. Run it after any prefilter, search-loop, or
+   capture change: a prefilter false negative and a wrong group span both show
+   up as a mismatch.
 5. **DFA unit tests.** The DFA result must equal the PikeVM result on patterns
    with alternation priority, greedy repetition, optional prefixes,
    `^`, `\A`, `\Z`, impossible `Start`/`End` placements, UCS-2, and UCS-4.
@@ -71,7 +75,7 @@ Run from the repository root:
     cargo clippy --all-targets -- -D warnings
     cargo test
     cargo test --release
-    python3 tools/python_diff.py --patterns 1000
+    python3 tools/python_diff.py --patterns 300 --max-length 3
     cargo run --release --example bench -- --self-test
     cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
     cargo check --features python
@@ -132,8 +136,9 @@ on demand. Five jobs, Ubuntu only, using the `rust-toolchain.toml` channel
    `cargo publish --dry-run` of the crates.io placeholder manifest.
 2. **Binding.** A matrix over CPython 3.10 through 3.15: `maturin build
    --release`, install the wheel, run `tools/test_python_binding.py`.
-3. **Python differential.** `tools/python_diff.py --patterns 1000` on CPython
-   3.13. It builds `examples/oracle.rs` itself.
+3. **Python differential.** `tools/python_diff.py --patterns 300
+   --max-length 3` on CPython 3.13, about 128,000 cases across all three
+   storage kinds. It builds `examples/oracle.rs` itself.
 4. **Benchmark self-test.** `cargo run --release --example bench --
    --self-test`, offline.
 5. **Docs.** `python3 tools/check_docs.py`.

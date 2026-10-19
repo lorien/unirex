@@ -154,6 +154,12 @@ There is therefore no Unicode-version dependence until milestone 2 adds
 Python class tables. Those tables must be generated for a documented CPython
 Unicode version, and any version-dependent divergence must be recorded here.
 
+## Divergences found by the differential suite
+
+- `\B` never matches in an empty haystack, matching CPython 3.12 and later.
+- With verbose mode set, `regex-syntax` strips whitespace inside character
+  classes, so `[ ]` raises a parse error where CPython accepts it.
+
 ## Deferred Python behavior
 
 These are intentionally not part of the current subset and are tracked for

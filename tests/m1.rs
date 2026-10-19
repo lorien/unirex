@@ -162,6 +162,9 @@ fn python_classes_boundaries_and_end_anchor() {
         (r"foo$", "foobar\n", &[]),
         (r"\b", "ab cd", &[(0, 0), (2, 2), (3, 3), (5, 5)]),
         (r"\s\b", "a b", &[(1, 2)]),
+        // CPython never reports \B in an empty haystack.
+        (r"\B", "", &[]),
+        (r"\B", " ", &[(0, 0), (1, 1)]),
     ];
     for (pattern, hay, expected) in cases {
         assert_eq!(

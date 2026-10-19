@@ -95,7 +95,7 @@ jobs:
           key: diff-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: diff-${{ runner.os }}-
       - name: Compare against CPython re
-        run: python3 tools/python_diff.py --patterns 1000
+        run: python3 tools/python_diff.py --patterns 300 --max-length 3
 
   bench:
     name: Benchmark self-test
