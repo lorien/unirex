@@ -42,6 +42,19 @@ CI commands identical to the local commands in `spec/docs/testing.md`.
   the CI commands to `spec/docs/dev.md`, and removed this task from
   `spec/docs/plan.md`.
 
+### First CI run
+
+Run 39242540033 on `b2b1acd`: ten jobs, all successful, in about 1m15s.
+
+- Rust: 11:09:08 to 11:10:23 locally-instrumented steps, with the Python
+  feature check the slowest at 60 s.
+- Binding legs: 26 s to 39 s each, six of six green, including CPython 3.10
+  and 3.15, so the `pyo3 0.30` support range held in practice.
+- Python differential, benchmark self-test, and docs: green.
+
+This is the first evidence that the engine builds and passes its smoke test on
+interpreters other than 3.13.
+
 ### Decisions taken by the owner
 
 - Toolchain channel stays `stable`, so the workflow does not pin a Rust
