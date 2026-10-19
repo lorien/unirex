@@ -1,10 +1,11 @@
 # CPython conformance suite
 
-Vendored from CPython v3.13.5:
+Vendored per supported release under `3.10/` through `3.15/`, each copied from
+its own CPython tag (`Lib/test/test_re.py` and `Lib/test/re_tests.py`):
 
-- `vendored_test_re.py` — `Lib/test/test_re.py`, verbatim except for its
-  provenance header.
-- `vendored_re_tests.py` — `Lib/test/re_tests.py`, the external data suite.
+- `<version>/vendored_test_re.py` — `Lib/test/test_re.py` from that tag.
+- `<version>/vendored_re_tests.py` — `Lib/test/re_tests.py` from that tag.
+- `<version>/EXPECTED.py` — that version's ledger.
 
 Both are PSF License Version 2; see https://docs.python.org/3/license.html. The
 only modification is the provenance header on each file.

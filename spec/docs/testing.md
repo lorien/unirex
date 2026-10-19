@@ -73,8 +73,13 @@ against CPython `re`.
    ledger: closing a gap means deleting its entry in the same commit. The shim
    is process-wide, so the file runs in its own pytest invocation, and
    `tests/re_guard.py` fails if a parity suite ever runs with a replaced `re`.
-   The vendored file is 3.13.5's, and it asserts interpreter-version behaviour,
-   so CI runs it on 3.13 only; other interpreters get the binding smoke test.
+   Each supported release has its own vendored copy of the suite under
+   `tests/cpython/<version>/` and its own ledger, because test names and
+   behaviour differ between releases. CI runs the conformance suite on every
+   matrix leg, free-threaded included; a leg whose ledger is missing generates
+   one and reports it as a warning instead of failing silently.
+   `tools/gen_conformance_ledger.py` regenerates a ledger for the running
+   interpreter.
 15. **Planned follow-ups.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
