@@ -48,10 +48,14 @@
 - [open] Yank `unirex 0.0.1` on both registries after the first functional
   release, with `cargo yank --version 0.0.1` and the PyPI web UI.
 - [open] The placeholder manifests have no `repository` or `homepage` because
-  the repository has no git remote. Add both once a remote exists.
+  the repository had no git remote. `github.com/lorien/unirex` now exists, so
+  add both before the next publish; the published `0.0.1` cannot be changed.
 - [open] `README.md` does not state the license or the reserved names, and the
   root `Cargo.toml` still has no `repository`, `readme`, `keywords`, or
   `categories` for the real release.
+  Partly resolved: the README now has `Install` (which states that the
+  published `0.0.1` packages are empty) and `License` sections. The root
+  `Cargo.toml` metadata is still missing.
 
 ### Tooling/process
 

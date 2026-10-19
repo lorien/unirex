@@ -45,9 +45,10 @@
 - [open] Yank `unirex 0.0.1` on PyPI after the first functional release ships.
   It is lower than `0.1.0`, so resolvers already prefer the real release, but
   yanking keeps the project page from advertising an empty package.
-- [open] The placeholder has no `project.urls` because the repository has no
-  git remote. Add `Repository`/`Homepage` once a remote exists; metadata is
-  editable without a new release.
+- [open] The placeholder has no `project.urls` because the repository had no
+  git remote. The remote now exists as `github.com/lorien/unirex`; adding
+  `Repository`/`Homepage` is still pending, and metadata is editable without a
+  new release.
 - [acted] Future functional releases need real wheels. `maturin` is not
   installed on the development machine, and the extension is non-abi3, so a
   release needs one wheel per CPython version and platform.
