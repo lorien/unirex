@@ -1,7 +1,10 @@
 # UCS Access Through the CPython C API
 
 Date: 2026-10-18
-Status: accepted (scratch pooling revised by ADR-0016)
+Status: accepted (revised 2026-10-19: the binding is built and smoke-tested on
+CPython 3.10 through 3.15 and on the free-threaded 3.14t and 3.15t builds; the
+UCS accessors are read under the same rules in both modes because `str` is
+immutable) (scratch pooling revised by ADR-0016)
 
 ## Context
 

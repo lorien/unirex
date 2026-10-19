@@ -133,11 +133,11 @@ code point.
 | 2. Python classes, flags, captures | implemented except `x` |
 | 3. Prefilter and benchmark | implemented |
 | 4. Lazy DFA | implemented |
-| 5. PyO3 binding and end-to-end benchmark | implemented on CPython 3.13 GIL |
+| 5. PyO3 binding and end-to-end benchmark | implemented, 3.10-3.15 and 3.14t/3.15t |
 | Continuous integration | implemented |
 
-Known gaps: the full-grammar UCS differential suite and verification on
-free-threaded builds. See `spec/docs/milestones.md`.
+Known gaps: the verbose-mode `[ ]` divergence and the absence of a published
+functional release. See `spec/docs/milestones.md`.
 
 ## Performance
 

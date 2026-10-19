@@ -89,8 +89,8 @@ the differential and assertion suites; the DFA is faster on the full corpus.
 
 ## Milestone 5: PyO3 binding and end-to-end benchmark
 
-Status: implemented on CPython 3.13 GIL. Other versions and free-threaded
-builds are unverified.
+Status: implemented and verified on CPython 3.10 through 3.15 and on the
+free-threaded 3.14t and 3.15t builds.
 
 - PyO3 and maturin module for the current supported subset.
 - UCS access through CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and

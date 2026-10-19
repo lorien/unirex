@@ -47,8 +47,10 @@ against CPython `re`.
    `findall`, `find`, and `is_match` with CPython `re` on UCS-1, UCS-2, UCS-4,
    and lone-surrogate inputs. It also alternates two compiled patterns,
    exercises the GIL-detach threshold, and scans the same patterns from several
-   threads. The smoke test compares `findall` on capture patterns too, so group
-   tuples and unmatched-group empty strings are checked against `re`.
+   threads, using eight workers when the interpreter reports the GIL as
+   disabled. The smoke test compares `findall` on capture patterns too, so group
+   tuples and unmatched-group empty strings are checked against `re`, and it
+   prints the interpreter version and GIL state.
 10. **Capture cost.** `capture_costs` is an ignored test that prints per-match
    cost for the backtracker and the PikeVM fallback across span lengths. It is
    the only way to see the fallback path, which is silent at runtime.
@@ -134,7 +136,8 @@ on demand. Five jobs, Ubuntu only, using the `rust-toolchain.toml` channel
 1. **Rust.** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
    `cargo test`, `cargo test --release`, `cargo check --features python`, and a
    `cargo publish --dry-run` of the crates.io placeholder manifest.
-2. **Binding.** A matrix over CPython 3.10 through 3.15: `maturin build
+2. **Binding.** A matrix over CPython 3.10 through 3.15 plus the free-threaded
+   3.14t and 3.15t builds: `maturin build
    --release`, install the wheel, run `tools/test_python_binding.py`.
 3. **Python differential.** `tools/python_diff.py --patterns 300
    --max-length 3` on CPython 3.13, about 128,000 cases across all three

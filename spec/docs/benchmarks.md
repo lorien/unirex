@@ -15,6 +15,21 @@ The corpus URL is a public release asset. The URL lives under the external
 `rurex` project only as data provenance; this benchmark does not import or run
 the `rurex` engine.
 
+## Per-interpreter binding benchmark
+
+The binding is built and smoke-tested on CPython 3.10 through 3.15 and on the
+free-threaded 3.14t and 3.15t builds. CI runs a 100,000-post end-to-end
+benchmark for each of those interpreters with `--limit 100000 --repeat 2`, so a
+per-interpreter regression shows up in the job log rather than in prose that
+goes stale.
+
+Reference point, local laptop, CPython 3.13.5 with the GIL, 100,000 posts, one
+thread: median 0.0541 s, minimum 0.0536 s, 43,456 mentions.
+
+Free-threaded builds are non-abi3 as well, so they need their own wheels, and
+their GIL-detach path is exercised by the eight-worker phase of
+`tools/test_python_binding.py`.
+
 ## Published report
 
 `tools/telegram_benchmark.py` is the full matrix entry point. It holds

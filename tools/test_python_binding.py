@@ -7,6 +7,7 @@ Run with the built module on PYTHONPATH, for example:
 
 import re
 import sys
+import platform
 import threading
 from pathlib import Path
 
@@ -121,8 +122,13 @@ def main() -> int:
                 failures.append("thread regex_b")
                 return
 
+    # A free-threaded build runs the same scan with more workers and no GIL, which
+    # is the only configuration where the thread-local scratch and the GIL-detach
+    # path can race.
+    gil_enabled = getattr(sys, "_is_gil_enabled", lambda: True)()
+    workers = 4 if gil_enabled else 8
     threads = [
-        threading.Thread(target=worker, args=(first, second)) for _ in range(4)
+        threading.Thread(target=worker, args=(first, second)) for _ in range(workers)
     ]
     for thread in threads:
         thread.start()
@@ -193,7 +199,11 @@ def main() -> int:
         print("ERROR TYPE MISMATCH: expected unirex.error")
         return 1
 
-    print(f"python binding smoke test ok: {len(PATTERNS)} patterns")
+    print(
+        f"python binding smoke test ok: {len(PATTERNS)} patterns, "
+        f"workers={workers}, gil={'on' if gil_enabled else 'off'}, "
+        f"python={platform.python_version()}"
+    )
     return 0
 
 
