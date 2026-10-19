@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Differential check: exp_rurex against CPython's `re` on the M1 subset.
+"""Differential check: unirex against CPython's `re` on the M1 subset.
 
 Generates random patterns from the supported grammar, runs both engines over
 all strings of length 0..4 over {a,b,c}, and compares `finditer` spans.

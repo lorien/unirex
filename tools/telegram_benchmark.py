@@ -35,7 +35,7 @@ DEFAULT_RESULTS = ROOT / "var" / "bench-results" / "telegram"
 DEFAULT_CPUS = "0,2,4,6"
 PATTERN = r"@[a-zA-Z][a-zA-Z0-9_]{4,31}"
 ENGINE_MODES = ("ucs", "bytes", "str")
-PY_ENGINES = ("exp_rurex", "re")
+PY_ENGINES = ("unirex", "re")
 
 
 class CoreLease:
@@ -196,14 +196,14 @@ def build_all() -> None:
         subprocess.run(command, cwd=ROOT, check=True)
     target = ROOT / "target" / "release"
     module = None
-    for name in ("libexp_rurex.so", "libexp_rurex.dylib"):
+    for name in ("libunirex.so", "libunirex.dylib"):
         candidate = target / name
         if candidate.exists():
             module = candidate
             break
     if module is None:
         raise SystemExit(f"built extension not found under {target}")
-    destination = ROOT / "var" / "py" / "exp_rurex.so"
+    destination = ROOT / "var" / "py" / "unirex.so"
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(module, destination)
     print(f"copied {module} to {destination}", flush=True)
@@ -216,12 +216,12 @@ def check_prerequisites() -> None:
             f"{BENCH_BIN.relative_to(ROOT)} (run "
             "`cargo build --release --example bench`)"
         )
-    extension = ROOT / "var" / "py" / "exp_rurex.so"
+    extension = ROOT / "var" / "py" / "unirex.so"
     if not extension.exists():
         missing.append(
             f"{extension.relative_to(ROOT)} (run "
             "`cargo build --release --features extension-module` and copy "
-            "the shared object to var/py/exp_rurex.so)"
+            "the shared object to var/py/unirex.so)"
         )
     if missing:
         raise SystemExit("missing prerequisites:\n  " + "\n  ".join(missing))

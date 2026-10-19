@@ -22,7 +22,7 @@ Ad-hoc work requested by the owner: make the benchmark portable and run it.
 - Added ADR-0009 and updated `benchmarks.md`, `dev.md`, `architecture.md`,
   `overview.md`, `testing.md`, `conventions.md`, `index.md`, `README.md`, and
   `plan.md`.
-- Verified portability from `/tmp/exp_rurex_portable`: `--self-test` and a
+- Verified portability from `/tmp/unirex_portable`: `--self-test` and a
   tiny `--corpus` file work with no `/web` path. Also tested download,
   checksum verification, and caching against a local HTTP server.
 - Verified both published corpus checksums: gzip and uncompressed.

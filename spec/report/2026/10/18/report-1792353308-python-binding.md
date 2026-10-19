@@ -21,7 +21,7 @@ References: ADR-0007
 
 ### Done
 
-- Added `src/python.rs` with `exp_rurex.compile` and `exp_rurex.Regex`
+- Added `src/python.rs` with `unirex.compile` and `unirex.Regex`
   (`findall`, `find`, `is_match`).
 - UCS access uses CPython's `PyUnicode_KIND`, `PyUnicode_DATA`, and
   `PyUnicode_GET_LENGTH`; no private PEP 393 offsets. `PyUnicode_READY` is
@@ -46,7 +46,7 @@ References: ADR-0007
 Cold fresh process per point, pinned to one CPU, five runs each. Loading and
 pattern compilation are outside the timed window.
 
-- `exp_rurex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
+- `unirex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
   minimum 0.596 s.
 - CPython `re`: 0.490 s, 0.491 s, 0.501 s, 0.510 s, 0.648 s. Median 0.501 s,
   minimum 0.490 s.
@@ -87,13 +87,13 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 ### Tooling/process
 
 - [acted] Remove `rurex` from the reproducible benchmark. The harness now
-  compares only `exp_rurex` and CPython `re`; an external comparison, if
+  compares only `unirex` and CPython `re`; an external comparison, if
   wanted, must be produced separately.
 - [acted] Build and test through maturin. A CPython 3.13 wheel built and loaded
   successfully in a fresh virtualenv.
 - [acted] Keep a Cargo-only path for environments without maturin:
   `cargo build --release --features extension-module`, then place
-  `libexp_rurex.so` on `PYTHONPATH` as `exp_rurex.so`.
+  `libunirex.so` on `PYTHONPATH` as `unirex.so`.
 - [acted] End-to-end timings varied with system load. The Python runner now
   supports CPU pinning, warmups, thread CPU time, load/frequency reporting,
   and efficiency-based retries.

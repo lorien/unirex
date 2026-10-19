@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""End-to-end Telegram benchmark for the exp_rurex Python binding.
+"""End-to-end Telegram benchmark for the unirex Python binding.
 
 The corpus is resolved from --corpus, RUREX_TG_DATA, the verified cache under
 var/bench-data, or the public release URL. Loading and compilation are outside
 the timed window. Each worker scans its slice once after a barrier.
 
 Usage:
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex
     PYTHONPATH=var/py python3 tools/bench_python.py --engine re
 """
 
@@ -87,13 +87,13 @@ def load_texts(path: Path, limit: int | None) -> list[str]:
 
 
 def import_engine(engine: str):
-    if engine == "exp_rurex":
+    if engine == "unirex":
         try:
-            import exp_rurex
+            import unirex
         except ImportError:
             sys.path.insert(0, str(ROOT / "var" / "py"))
-            import exp_rurex
-        return exp_rurex
+            import unirex
+        return unirex
     if engine == "re":
         import re
         return re
@@ -280,7 +280,7 @@ def cpu_name() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--engine", choices=["exp_rurex", "re"], default="exp_rurex")
+    parser.add_argument("--engine", choices=["unirex", "re"], default="unirex")
     parser.add_argument("--corpus", type=Path)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--repeat", type=int, default=3)

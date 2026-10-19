@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke-test the exp_rurex Python binding against CPython `re`.
+"""Smoke-test the unirex Python binding against CPython `re`.
 
 Run with the built module on PYTHONPATH, for example:
     PYTHONPATH=var/py python3 tools/test_python_binding.py
@@ -12,10 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 try:
-    import exp_rurex
+    import unirex
 except ImportError:
     sys.path.insert(0, str(ROOT / "var" / "py"))
-    import exp_rurex
+    import unirex
 
 PATTERNS = [
     "a",
@@ -55,7 +55,7 @@ HAYSTACKS = [
 
 def main() -> int:
     for pattern in PATTERNS:
-        ours = exp_rurex.compile(pattern)
+        ours = unirex.compile(pattern)
         reference = re.compile(pattern)
         for text in HAYSTACKS:
             got = ours.findall(text)
@@ -76,8 +76,8 @@ def main() -> int:
             if ours.is_match(text) != bool(one_ref):
                 print(f"IS_MATCH MISMATCH pattern={pattern!r} text={text!r}")
                 return 1
-    first = exp_rurex.compile("a+")
-    second = exp_rurex.compile("[0-9]+")
+    first = unirex.compile("a+")
+    second = unirex.compile("[0-9]+")
     for _ in range(1000):
         if first.findall("baaab") != ["aaa"]:
             print("SCRATCH MISMATCH first pattern")
@@ -87,7 +87,7 @@ def main() -> int:
             return 1
 
     long_text = "x" * 5000 + "bbb" + "y" * 5000
-    long_re = exp_rurex.compile("b+")
+    long_re = unirex.compile("b+")
     if long_re.findall(long_text) != ["bbb"]:
         print("DETACH MISMATCH")
         return 1

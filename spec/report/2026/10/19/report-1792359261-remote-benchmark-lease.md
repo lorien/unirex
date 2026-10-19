@@ -12,7 +12,7 @@ Run the engine-only and end-to-end benchmarks on an idle laptop with
 provisional. The last attempt was rejected because an external benchmark kept
 the machine loaded. Record CPU frequency, load, per-worker efficiency, and the
 exact CPU list. Acceptance: the requested number of clean runs for UCS, bytes,
-and str at 1 and 4 threads, and for `exp_rurex` and `re` end to end at 1
+and str at 1 and 4 threads, and for `unirex` and `re` end to end at 1
 thread, with all conditions recorded.
 
 The owner changed the execution target to `regexus` and added the core lease
@@ -30,7 +30,7 @@ requirement.
   and a killed process both release the lock.
 - Added ADR-0014 and updated `benchmarks.md`, `README.md`, `dev.md`,
   `testing.md`, `AGENTS.md`, `index.md`, and `plan.md`.
-- Rsynced the project to `web@regexus:/web/benchmark/exp_rurex`, excluding
+- Rsynced the project to `web@regexus:/web/benchmark/unirex`, excluding
   `target`, `var`, `.git`, virtualenvs, `__pycache__`, and built modules.
 - Built and tested remotely as `web` with Rust 1.99.1. All 8 unit tests and 15
   integration tests passed. The Python extension built and the binding smoke
@@ -60,14 +60,14 @@ UCS scales 3.56 times from 1 to 4 threads; bytes scales 3.39 times. UCS is
 
 End-to-end Python, GIL:
 
-- 1 thread: `exp_rurex` 0.2960 s median, 0.2941 s minimum; CPython `re`
+- 1 thread: `unirex` 0.2960 s median, 0.2941 s minimum; CPython `re`
   0.1909 s median, 0.1903 s minimum.
-- 2 threads: `exp_rurex` 0.2972 s; `re` 0.1957 s.
-- 3 threads: `exp_rurex` 0.3330 s; `re` 0.3572 s.
-- 4 threads: `exp_rurex` 0.5474 s; `re` 0.4419 s.
+- 2 threads: `unirex` 0.2972 s; `re` 0.1957 s.
+- 3 threads: `unirex` 0.3330 s; `re` 0.3572 s.
+- 4 threads: `unirex` 0.5474 s; `re` 0.4419 s.
 
 GIL threads do not scale. The meaningful end-to-end number is one thread:
-`exp_rurex` is about 1.55 times slower than CPython `re`. It is below the
+`unirex` is about 1.55 times slower than CPython `re`. It is below the
 0.75 s and 0.45 s targets on this machine, but the remote CPU is much faster
 than the original laptop. No `rurex` engine was run.
 

@@ -1,5 +1,5 @@
 [package]
-name = "exp_rurex"
+name = "unirex"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -7,7 +7,7 @@ license = "MIT"
 description = "Experimental linear-time regex engine over CPython UCS storage"
 
 [lib]
-name = "exp_rurex"
+name = "unirex"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]

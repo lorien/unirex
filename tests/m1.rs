@@ -1,5 +1,5 @@
-use exp_rurex::{Error, Match, Regex, Ucs};
 use std::time::{Duration, Instant};
+use unirex::{Error, Match, Regex, Ucs};
 
 fn spans(iter: impl Iterator<Item = Match>) -> Vec<(usize, usize)> {
     iter.map(|m| (m.start(), m.end())).collect()

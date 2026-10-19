@@ -61,7 +61,7 @@ numbers are marked provisional in the docs.
   is available; currently the runner records frequency but not temperature.
 - [acted] Keep external benchmark processes out of benchmark runs. The
   `/tmp/core4.lock` lease was used for the remote matrix.
-- [acted] Rerun the 1-thread and 4-thread engine matrix and the `exp_rurex`
+- [acted] Rerun the 1-thread and 4-thread engine matrix and the `unirex`
   versus `re` end-to-end pair. Completed remotely.
 
 ### Tooling/process

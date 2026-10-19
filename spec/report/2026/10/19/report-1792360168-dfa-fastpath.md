@@ -7,7 +7,7 @@
 Status: done
 
 Remote `regexus`, one thread on the first four physical P-cores: end-to-end
-`exp_rurex` is 0.296 s median versus 0.191 s for CPython `re`. Engine-only, the
+`unirex` is 0.296 s median versus 0.191 s for CPython `re`. Engine-only, the
 DFA is 0.191 s versus 0.071 s for Rust `regex` bytes. The binding overhead is
 not the main gap; the per-candidate DFA setup and transition lookup are.
 Optimize the DFA fast path and rerun both the engine-only and end-to-end
@@ -53,9 +53,9 @@ at one thread and 1.74x slower at four.
 
 End-to-end Python, GIL:
 
-- 1 thread: `exp_rurex` 0.2308 s median, 0.2289 s minimum; CPython `re`
+- 1 thread: `unirex` 0.2308 s median, 0.2289 s minimum; CPython `re`
   0.1914 s median, 0.1903 s minimum.
-- `exp_rurex` improved from 0.2960 s to 0.2308 s. It is now 1.21x slower than
+- `unirex` improved from 0.2960 s to 0.2308 s. It is now 1.21x slower than
   `re`.
 - GIL threads 2-4 do not scale.
 

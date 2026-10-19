@@ -30,7 +30,7 @@ thread_local! {
 }
 
 /// A compiled pattern exposed to Python.
-#[pyclass(name = "Regex", module = "exp_rurex")]
+#[pyclass(name = "Regex", module = "unirex")]
 pub struct PyRegex {
     inner: CoreRegex,
     /// Stable identity used to match a thread-local scratch to this pattern.
@@ -147,7 +147,7 @@ impl PyRegex {
     }
 
     fn __repr__(&self) -> String {
-        "exp_rurex.Regex".to_string()
+        "unirex.Regex".to_string()
     }
 }
 
@@ -247,7 +247,7 @@ fn compile(pattern: &str) -> PyResult<PyRegex> {
 }
 
 #[pymodule]
-fn exp_rurex(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRegex>()?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;

@@ -46,11 +46,11 @@ Engine-only medians:
 
 End-to-end Python, GIL, medians and minima:
 
-- 1 thread: `exp_rurex` 0.1884 s / 0.1835 s; CPython `re` 0.1914 s /
+- 1 thread: `unirex` 0.1884 s / 0.1835 s; CPython `re` 0.1914 s /
   0.1913 s.
-- 2 threads: `exp_rurex` 0.1735 s / 0.1658 s; `re` 0.1907 s / 0.1877 s.
-- 3 threads: `exp_rurex` 0.1880 s / 0.1657 s; `re` 0.1906 s / 0.1816 s.
-- 4 threads: `exp_rurex` 0.1838 s / 0.1775 s; `re` 0.1879 s / 0.1834 s.
+- 2 threads: `unirex` 0.1735 s / 0.1658 s; `re` 0.1907 s / 0.1877 s.
+- 3 threads: `unirex` 0.1880 s / 0.1657 s; `re` 0.1906 s / 0.1816 s.
+- 4 threads: `unirex` 0.1838 s / 0.1775 s; `re` 0.1879 s / 0.1834 s.
 
 The one-thread end-to-end result is 1.6 percent faster than CPython `re` at
 the median and 4.1 percent faster at the minimum. Engine-only UCS is 2.0

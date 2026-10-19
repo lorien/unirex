@@ -66,7 +66,7 @@ Run from the repository root:
     cargo check --features python
     cargo build --release --features extension-module
     PYTHONPATH=var/py python3 tools/test_python_binding.py
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 Timing assertions use release builds. A debug-build timing test is not

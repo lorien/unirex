@@ -39,7 +39,7 @@ FULL_MENTIONS = 334_136
 FULL_POSTS_WITH = 186_226
 THREADS = (1, 2, 3, 4)
 ENGINE_MODES = ("ucs", "bytes", "str")
-PY_ENGINES = ("exp_rurex", "re")
+PY_ENGINES = ("unirex", "re")
 
 COLOR_EXP = "#CE422B"
 COLOR_RE = "#4C72B0"
@@ -172,7 +172,7 @@ def corpus_stats(engine: dict) -> dict:
 
 def environment(engine: dict, python: dict, manifest: dict) -> dict:
     ucs = engine[("ucs", 1)]
-    py = python[("exp_rurex", 1)]
+    py = python[("unirex", 1)]
     measured_at = manifest.get("generated_at")
     if not measured_at:
         measured_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -374,11 +374,11 @@ def build_blocks(
     mentions = stats["mentions"]
     posts_with = stats["posts_with"]
     pct_posts = posts_with / posts * 100.0
-    py1 = pym("exp_rurex", 1)
+    py1 = pym("unirex", 1)
     re1 = pym("re", 1)
-    pymin1 = pymin("exp_rurex", 1)
+    pymin1 = pymin("unirex", 1)
     remin1 = pymin("re", 1)
-    py4 = pym("exp_rurex", 4)
+    py4 = pym("unirex", 4)
     re4 = pym("re", 4)
     ucs1 = em("ucs", 1)
     bytes1 = em("bytes", 1)
@@ -396,11 +396,11 @@ def build_blocks(
         py_rows.append(
             [
                 str(threads),
-                fmt_seconds(pym("exp_rurex", threads)),
-                fmt_seconds(pymin("exp_rurex", threads)),
+                fmt_seconds(pym("unirex", threads)),
+                fmt_seconds(pymin("unirex", threads)),
                 fmt_seconds(pym("re", threads)),
                 fmt_seconds(pymin("re", threads)),
-                fmt_ratio(pym("exp_rurex", threads) / pym("re", threads)),
+                fmt_ratio(pym("unirex", threads) / pym("re", threads)),
             ]
         )
 
@@ -433,11 +433,11 @@ def build_blocks(
         raw_dir = results_dir
 
     blocks = [
-        ("h1", "Telegram @mention extraction: exp_rurex vs `re`"),
+        ("h1", "Telegram @mention extraction: unirex vs `re`"),
         (
             "p",
             "Real-world task, measured as one `findall(text)` pass over every "
-            "post in the corpus. `exp_rurex` matches CPython's UCS-1, UCS-2, or "
+            "post in the corpus. `unirex` matches CPython's UCS-1, UCS-2, or "
             "UCS-4 buffer directly; there is no UTF-8 conversion in the matching "
             "path. This page compares the UCS-native binding with CPython `re` "
             "on the same parsed strings, and separately records the engine-only "
@@ -496,18 +496,18 @@ def build_blocks(
             "table",
             [
                 "Workers",
-                "exp_rurex median (s)",
-                "exp_rurex min (s)",
+                "unirex median (s)",
+                "unirex min (s)",
                 "re median (s)",
                 "re min (s)",
-                "exp_rurex/re",
+                "unirex/re",
             ],
             py_rows,
         ),
         (
             "p",
-            "A ratio below 1 means `exp_rurex` is faster. At one thread, "
-            f"`exp_rurex` is {fmt_seconds(py1)} s median and {fmt_seconds(pymin1)} s "
+            "A ratio below 1 means `unirex` is faster. At one thread, "
+            f"`unirex` is {fmt_seconds(py1)} s median and {fmt_seconds(pymin1)} s "
             f"minimum; CPython `re` is {fmt_seconds(re1)} s median and "
             f"{fmt_seconds(remin1)} s minimum. That is {pct_faster(py1, re1)} at the "
             f"median and {pct_faster(pymin1, remin1)} at the minimum.",
@@ -526,7 +526,7 @@ def build_blocks(
             "table",
             [
                 "Workers",
-                "exp_rurex UCS (s)",
+                "unirex UCS (s)",
                 "Rust regex bytes (s)",
                 "Rust regex str (s)",
                 "UCS/bytes",
@@ -583,7 +583,7 @@ def build_blocks(
             "cargo build --release --example bench\n"
             "cargo build --release --features extension-module\n"
             "mkdir -p var/py\n"
-            "cp target/release/libexp_rurex.so var/py/exp_rurex.so\n"
+            "cp target/release/libunirex.so var/py/unirex.so\n"
             "python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 "
             "--repeat 5 --warmup-seconds 2\n"
             "\n"
@@ -747,10 +747,10 @@ def generate(results_dir: Path, out_dir: Path, write_html: bool = True) -> None:
     py_xs = list(THREADS)
     py_series = [
         (
-            "exp_rurex",
+            "unirex",
             COLOR_EXP,
             None,
-            [float(python[("exp_rurex", t)]["median_s"]) for t in py_xs],
+            [float(python[("unirex", t)]["median_s"]) for t in py_xs],
         ),
         (
             "CPython re",
@@ -760,7 +760,7 @@ def generate(results_dir: Path, out_dir: Path, write_html: bool = True) -> None:
         ),
     ]
     eng_series = [
-        ("exp_rurex UCS", COLOR_EXP, None, [float(engine[("ucs", t)]["median_s"]) for t in py_xs]),
+        ("unirex UCS", COLOR_EXP, None, [float(engine[("ucs", t)]["median_s"]) for t in py_xs]),
         ("Rust regex bytes", COLOR_RE, "7 4", [float(engine[("bytes", t)]["median_s"]) for t in py_xs]),
         ("Rust regex str", COLOR_STR, "2 4", [float(engine[("str", t)]["median_s"]) for t in py_xs]),
     ]

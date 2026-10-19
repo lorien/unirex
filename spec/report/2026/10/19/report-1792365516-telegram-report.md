@@ -7,7 +7,7 @@
   - holds `/tmp/core4.lock` for the whole matrix and passes `--no-lock` to
     the child runners;
   - runs engine-only `ucs`, `bytes`, and `str` at 1 to 4 workers;
-  - runs Python `exp_rurex` and `re` at 1 to 4 workers;
+  - runs Python `unirex` and `re` at 1 to 4 workers;
   - writes JSON and a manifest under `var/bench-results/telegram/`;
   - calls the report renderer unless `--no-render` or `--limit` is used.
 - Added `tools/telegram_report.py`, which:
@@ -38,7 +38,7 @@ Remote `regexus`, full corpus, first four physical P-cores `0,2,4,6`:
 - Engine-only 1 thread: UCS 0.0689 s, Rust `regex` bytes 0.0715 s, str
   0.0715 s.
 - Engine-only 4 threads: UCS 0.0257 s, bytes 0.0209 s, str 0.0212 s.
-- End-to-end Python 1 thread: `exp_rurex` 0.1887 s median and 0.1838 s
+- End-to-end Python 1 thread: `unirex` 0.1887 s median and 0.1838 s
   minimum; CPython `re` 0.1912 s median and 0.1905 s minimum.
 - The generated page reports 1.3 percent faster at the median and 3.5 percent
   faster at the minimum for the one-thread end-to-end result.

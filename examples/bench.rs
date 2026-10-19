@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Barrier;
 use std::time::{Duration, Instant};
 
-use exp_rurex::{Regex, Scratch, Ucs};
 use flate2::read::MultiGzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use unirex::{Regex, Scratch, Ucs};
 
 const DATA_URL: &str =
     "https://github.com/lorien/rurex/releases/download/bench-data-telegram-v1/tg-1m.json.gz";

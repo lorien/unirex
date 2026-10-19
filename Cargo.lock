@@ -99,23 +99,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "exp_rurex"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "flate2",
- "libc",
- "memchr",
- "pyo3",
- "regex",
- "regex-syntax",
- "serde",
- "serde_json",
- "sha2",
- "ureq",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,6 +463,23 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unirex"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "flate2",
+ "libc",
+ "memchr",
+ "pyo3",
+ "regex",
+ "regex-syntax",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
+]
 
 [[package]]
 name = "untrusted"

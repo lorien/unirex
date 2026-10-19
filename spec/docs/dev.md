@@ -50,14 +50,14 @@ Python binding:
     pip install maturin
     maturin develop --release
     python3 tools/test_python_binding.py
-    python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    python3 tools/bench_python.py --engine unirex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 
 Full Telegram matrix and report:
 
     cargo build --release --example bench
     cargo build --release --features extension-module
     mkdir -p var/py
-    cp target/release/libexp_rurex.so var/py/exp_rurex.so
+    cp target/release/libunirex.so var/py/unirex.so
     python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
@@ -66,8 +66,8 @@ The first command writes `docs/telegram-benchmark.md`, the SVG charts under
 under `var/bench-results/telegram/`.
 
 For a Cargo-only build, run `cargo build --release --features extension-module`
-and put `target/release/libexp_rurex.so` on `PYTHONPATH` as
-`exp_rurex.so`. The `pyproject.toml` uses maturin with the `extension-module`
+and put `target/release/libunirex.so` on `PYTHONPATH` as
+`unirex.so`. The `pyproject.toml` uses maturin with the `extension-module`
 feature and is non-abi3.
 
 Benchmark runs pin workers, warm up, measure CPU time, take the
@@ -85,7 +85,7 @@ The Python harness builds and runs `examples/oracle.rs`, then compares
 
 ## Remote benchmarks on regexus
 
-Use the `web` account and `/web/benchmark/exp_rurex`. Sync with `target`,
+Use the `web` account and `/web/benchmark/unirex`. Sync with `target`,
 `var`, `.git`, virtualenvs, `__pycache__`, and built modules excluded. Build
 with `~/.cargo/bin/cargo`. The corpus must download and verify on `regexus`;
 do not copy the local corpus as a fallback.

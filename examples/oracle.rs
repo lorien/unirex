@@ -3,7 +3,7 @@
 
 use std::io::{self, BufRead};
 
-use exp_rurex::{Regex, Ucs};
+use unirex::{Regex, Ucs};
 
 fn main() {
     let stdin = io::stdin();

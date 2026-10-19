@@ -2,7 +2,7 @@
 
 ## What this repository is
 
-`exp_rurex` is an experimental, linear-time regular-expression engine that
+`unirex` is an experimental, linear-time regular-expression engine that
 matches directly against CPython's PEP 393 string storage: UCS-1, UCS-2, and
 UCS-4. It starts as a standalone Rust crate with no Python dependency, so the
 matching model can be tested on plain slices. A PyO3 binding exposes the same

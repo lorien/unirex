@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2"]
 build-backend = "maturin"
 
 [project]
-name = "exp_rurex"
+name = "unirex"
 version = "0.1.0"
 description = "Experimental linear-time regex engine over CPython UCS storage"
 requires-python = ">=3.10"
@@ -11,4 +11,4 @@ license = "MIT"
 
 [tool.maturin]
 features = ["extension-module"]
-module-name = "exp_rurex"
+module-name = "unirex"

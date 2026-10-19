@@ -1,6 +1,6 @@
-# exp_rurex — UCS-native linear-time regex engine
+# unirex — UCS-native linear-time regex engine
 
-`exp_rurex` is an experimental Rust engine that matches regular expressions
+`unirex` is an experimental Rust engine that matches regular expressions
 directly against CPython's PEP 393 UCS-1, UCS-2, and UCS-4 storage, with no
 UTF-8 conversion in the matching path. The long-term goal is an alternative
 `str` path for `rurex`; the first milestones are a standalone crate with no

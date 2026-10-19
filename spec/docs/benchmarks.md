@@ -95,37 +95,37 @@ result must be labeled synthetic.
 Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
 Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
 CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
-Governor stayed `powersave`, turbo enabled. Engine frequency was 4.5 GHz to
-4.8 GHz. Load was 0.09 to 1.04 from other work, but per-worker efficiency
+Governor stayed `powersave`, turbo enabled. Engine frequency was 4.7 GHz to
+4.8 GHz. Load was 0.35 to 1.27 from other work, but per-worker efficiency
 stayed at 1.00. `/tmp/core4.lock` was held for the whole matrix.
 
 Engine-only medians, full corpus:
 
-- 1 thread: UCS 0.0689 s, Rust `regex` bytes 0.0715 s, str 0.0715 s.
-- 2 threads: UCS 0.0388 s, bytes 0.0380 s, str 0.0376 s.
-- 3 threads: UCS 0.0296 s, bytes 0.0270 s, str 0.0271 s.
-- 4 threads: UCS 0.0257 s, bytes 0.0209 s, str 0.0212 s.
+- 1 thread: UCS 0.0690 s, Rust `regex` bytes 0.0712 s, str 0.0711 s.
+- 2 threads: UCS 0.0386 s, bytes 0.0377 s, str 0.0378 s.
+- 3 threads: UCS 0.0294 s, bytes 0.0266 s, str 0.0266 s.
+- 4 threads: UCS 0.0258 s, bytes 0.0209 s, str 0.0209 s.
 
-UCS scales 2.68 times from 1 to 4 threads; bytes scales 3.43 times. UCS is
-about 3.6 percent faster than bytes at one thread and 1.23 times slower at
+UCS scales 2.67 times from 1 to 4 threads; bytes scales 3.41 times. UCS is
+about 3.1 percent faster than bytes at one thread and 1.24 times slower at
 four. The one-thread result is the parity target; four-thread UCS scaling is
 limited by each worker scanning wider UCS storage and keeping its own DFA
 cache.
 
 End-to-end Python, same CPU lists, GIL:
 
-- 1 thread: `exp_rurex` 0.1887 s median, 0.1838 s minimum; CPython `re`
-  0.1912 s median, 0.1905 s minimum.
-- 2 threads: `exp_rurex` 0.1799 s median, 0.1443 s minimum; `re` 0.1874 s
-  median, 0.1862 s minimum.
-- 3 threads: `exp_rurex` 0.1897 s median, 0.1874 s minimum; `re` 0.1889 s
-  median, 0.1854 s minimum.
-- 4 threads: `exp_rurex` 0.1660 s median, 0.1599 s minimum; `re` 0.1888 s
-  median, 0.1782 s minimum.
+- 1 thread: `unirex` 0.1851 s median, 0.1830 s minimum; CPython `re`
+  0.1923 s median, 0.1899 s minimum.
+- 2 threads: `unirex` 0.1861 s median, 0.1776 s minimum; `re` 0.1890 s
+  median, 0.1881 s minimum.
+- 3 threads: `unirex` 0.1924 s median, 0.1703 s minimum; `re` 0.1923 s
+  median, 0.1670 s minimum.
+- 4 threads: `unirex` 0.1801 s median, 0.1617 s minimum; `re` 0.1829 s
+  median, 0.1775 s minimum.
 
 The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
-is the end-to-end target. `exp_rurex` is 1.3 percent faster than CPython `re`
-at the median and 3.5 percent faster at the minimum. The 2-4 thread medians
+is the end-to-end target. `unirex` is 3.8 percent faster than CPython `re`
+at the median and 3.6 percent faster at the minimum. The 2-4 thread medians
 are noisy because the Python runs do not keep the cores at a stable frequency;
 they are reported for completeness, not as scaling evidence. This CPU is much
 faster than the original laptop baseline, and no `rurex` engine was run.
@@ -192,7 +192,7 @@ Use a fresh process per point. The following are five fresh-process runs from
 this repository's own corpus cache, pinned to one CPU, one thread, GIL build,
 full corpus:
 
-- `exp_rurex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
+- `unirex`: 0.596 s, 0.597 s, 0.598 s, 0.599 s, 0.604 s. Median 0.598 s,
   minimum 0.596 s.
 - CPython `re`: 0.490 s, 0.491 s, 0.501 s, 0.510 s, 0.648 s. Median 0.501 s,
   minimum 0.490 s.
@@ -216,7 +216,7 @@ been tested.
     cargo run --release --example bench -- --mode ucs --threads 4 --cpu-list 0,1,2,3 --warmup-seconds 2 --repeat 5
     cargo run --release --example bench -- --mode bytes --cpu-list 2 --warmup-seconds 2 --repeat 5
     cargo run --release --example bench -- --mode str --cpu-list 2 --warmup-seconds 2 --repeat 5
-    PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+    PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
     PYTHONPATH=var/py python3 tools/bench_python.py --engine re --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
     python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram

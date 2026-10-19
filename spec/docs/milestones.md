@@ -74,9 +74,9 @@ Status: implemented.
 
 Results: local 1.266 s to 0.360 s at one thread. After initial-state caching,
 flat transitions, a parallel match-flag array, and the unit-wide prefilter,
-remote `regexus` is 0.0689 s at one thread and 0.0257 s at four. Rust `regex`
-bytes is 0.0715 s at one thread and 0.0209 s at four. UCS is slightly faster
-at one thread and 1.23 times slower at four.
+remote `regexus` is 0.0690 s at one thread and 0.0258 s at four. Rust `regex`
+bytes is 0.0712 s at one thread and 0.0209 s at four. UCS is slightly faster
+at one thread and 1.24 times slower at four.
 
 Acceptance: cache cap and fallback are tested; DFA results match the PikeVM on
 the differential and assertion suites; the DFA is faster on the full corpus.
@@ -96,10 +96,10 @@ builds are unverified.
 
 Remote `regexus`, first four physical P-cores, one thread, GIL:
 
-- `exp_rurex`: median 0.1887 s, minimum 0.1838 s.
-- CPython `re`: median 0.1912 s, minimum 0.1905 s.
+- `unirex`: median 0.1851 s, minimum 0.1830 s.
+- CPython `re`: median 0.1923 s, minimum 0.1899 s.
 
-The binding works and counts are correct. It is 1.3 percent faster than
-CPython `re` at the median and 3.5 percent faster at the minimum, so the
+The binding works and counts are correct. It is 3.8 percent faster than
+CPython `re` at the median and 3.6 percent faster at the minimum, so the
 one-thread end-to-end parity target is met. The engine is also slightly faster
-than Rust `regex` bytes at one thread, but 1.23 times slower at four.
+than Rust `regex` bytes at one thread, but 1.24 times slower at four.

@@ -1,4 +1,4 @@
-# exp_rurex
+# unirex
 
 Experimental linear-time regular-expression engine that matches directly
 against CPython's PEP 393 UCS storage: UCS-1, UCS-2, and UCS-4, with no UTF-8
@@ -63,7 +63,7 @@ one code point.
 ## Usage
 
 ```rust
-use exp_rurex::{Regex, Ucs};
+use unirex::{Regex, Ucs};
 
 let re = Regex::new("a+").unwrap();
 let hay = Ucs::Ucs2(&[0x61, 0x61]);
@@ -85,7 +85,7 @@ python3 tools/python_diff.py --patterns 1000
 cargo run --release --example bench -- --self-test
 cargo run --release --example bench -- --mode ucs --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 3 --min-efficiency 0.90
 PYTHONPATH=var/py python3 tools/test_python_binding.py
-PYTHONPATH=var/py python3 tools/bench_python.py --engine exp_rurex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
+PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --cpu-list 2 --warmup-seconds 2 --repeat 5 --min-efficiency 0.90
 python3 tools/telegram_benchmark.py --cpu-list 0,2,4,6 --repeat 5 --warmup-seconds 2
 python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 ```
@@ -113,14 +113,14 @@ written to `docs/telegram-benchmark.html` and is gitignored.
 Full-corpus results on `regexus` (Intel i5-13500, first four physical P-cores
 `0,2,4,6`, one thread per core, SMT siblings idle, `/tmp/core4.lock` held):
 
-- 1 thread: UCS 0.0689 s, Rust `regex` bytes 0.0715 s, str 0.0715 s.
-- 2 threads: UCS 0.0388 s, bytes 0.0380 s, str 0.0376 s.
-- 3 threads: UCS 0.0296 s, bytes 0.0270 s, str 0.0271 s.
-- 4 threads: UCS 0.0257 s, bytes 0.0209 s, str 0.0212 s.
+- 1 thread: UCS 0.0690 s, Rust `regex` bytes 0.0712 s, str 0.0711 s.
+- 2 threads: UCS 0.0386 s, bytes 0.0377 s, str 0.0378 s.
+- 3 threads: UCS 0.0294 s, bytes 0.0266 s, str 0.0266 s.
+- 4 threads: UCS 0.0258 s, bytes 0.0209 s, str 0.0209 s.
 
-UCS is about 3.6 percent faster than Rust `regex` bytes at one thread and
-1.23x slower at four. It scales 2.68x from one to four P-cores, while bytes
-scales 3.43x.
+UCS is about 3.1 percent faster than Rust `regex` bytes at one thread and
+1.24x slower at four. It scales 2.67x from one to four P-cores, while bytes
+scales 3.41x.
 
 Earlier laptop numbers were wall-clock only and are kept in
 `spec/docs/benchmarks.md` as historical.
@@ -141,16 +141,16 @@ Alternatively, build with Cargo and place the shared object on `PYTHONPATH`:
 ```sh
 cargo build --release --features extension-module
 mkdir -p var/py
-cp target/release/libexp_rurex.so var/py/exp_rurex.so
+cp target/release/libunirex.so var/py/unirex.so
 PYTHONPATH=var/py python3 tools/test_python_binding.py
 ```
 
 Usage:
 
 ```python
-import exp_rurex
+import unirex
 
-rx = exp_rurex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
+rx = unirex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
 rx.findall("hello @alice123")
 rx.find("hello @alice123")
 rx.is_match("hello @alice123")
@@ -158,10 +158,10 @@ rx.is_match("hello @alice123")
 
 End-to-end, one thread, GIL, full corpus, remote `regexus`:
 
-- `exp_rurex`: median 0.1887 s, minimum 0.1838 s.
-- CPython `re`: median 0.1912 s, minimum 0.1905 s.
+- `unirex`: median 0.1851 s, minimum 0.1830 s.
+- CPython `re`: median 0.1923 s, minimum 0.1899 s.
 
-`exp_rurex` is 1.3 percent faster than CPython `re` at the median and 3.5
+`unirex` is 3.8 percent faster than CPython `re` at the median and 3.6
 percent faster at the minimum. GIL threads 2-4 do not scale meaningfully.
 
 ## Not yet implemented
