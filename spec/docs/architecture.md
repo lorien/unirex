@@ -141,8 +141,19 @@ against CPython spans.
 
 ## Captures
 
-Milestone 2 adds slot arrays to the PikeVM. The leftmost-first rule is
-enforced by thread order, not by post-processing spans. Capture values in
+The lazy DFA tracks group 0 only, which is what keeps its state space small:
+`Save` instructions are epsilon edges and never enter a DFA state. Group spans
+are recovered afterwards, over the match span alone.
+
+`Regex::captures` runs a bounded backtracker anchored at the known match start
+and requiring the known match end. That is fast because the span is short and
+the search is anchored, and it is bounded by an explicit step budget. When the
+budget is exhausted, or the span exceeds the backtracker limit, the same span is
+re-derived with the PikeVM slot machinery instead, which is linear but
+O(span * program).
+
+The leftmost-first rule is enforced by branch order in the backtracker and by
+thread order in the PikeVM, never by post-processing spans. Capture values in
 unbounded loops are matched against Python `re` and documented if a divergence
 remains.
 
@@ -232,8 +243,10 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   release the GIL around the scan and build result strings afterward.
 - The extension is non-abi3 because the UCS data accessors are outside the
   limited API. Version-specific wheels are expected.
-- Only group 0 is exposed. Patterns with capture groups return the whole match,
-  not `re.findall`'s group tuples.
+- `findall` returns `re`-compatible group tuples when the pattern has groups,
+  and matched strings when it has none. Capture extraction happens while the
+  match is produced, over the match span only, so it costs work proportional to
+  matched text rather than to haystack length.
 
 End-to-end benchmark on `regexus`, full corpus, one thread, GIL:
 `unirex` was 0.1851 s median, 0.1830 s minimum; CPython `re` was 0.1923 s

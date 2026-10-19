@@ -17,6 +17,7 @@ const MAX_INSTS: usize = 100_000;
 const MAX_REPEAT: u32 = 1_000;
 const MAX_CLASSES: usize = 10_000;
 const MAX_CLASS_RANGES: usize = 100_000;
+const MAX_GROUPS: usize = 1_000;
 const MAX_CODEPOINT: u32 = 0x10FFFF;
 
 /// A compiled instruction program.
@@ -25,6 +26,8 @@ pub(crate) struct Program {
     pub(crate) classes: Vec<Class>,
     pub(crate) start: usize,
     pub(crate) first: Option<FirstSet>,
+    /// Number of capture groups, excluding group 0.
+    pub(crate) groups: usize,
 }
 
 /// A conservative set of code units that can begin a match.
@@ -98,6 +101,8 @@ pub(crate) enum Inst {
     Jump(usize),
     /// Zero-width assertion.
     Assert(AssertKind),
+    /// Record the current position into a capture slot. Epsilon transition.
+    Save(usize),
     /// Report a match at the current position.
     Match,
 }
@@ -291,6 +296,7 @@ struct Compiler {
     insts: Vec<Inst>,
     classes: Vec<Class>,
     total_class_ranges: usize,
+    groups: usize,
 }
 
 impl Compiler {
@@ -299,6 +305,7 @@ impl Compiler {
             insts: Vec::new(),
             classes: Vec::new(),
             total_class_ranges: 0,
+            groups: 0,
         }
     }
 
@@ -316,6 +323,7 @@ impl Compiler {
             classes: self.classes,
             start: 0,
             first,
+            groups: self.groups,
         })
     }
 
@@ -410,7 +418,20 @@ impl Compiler {
 
     fn compile_group(&mut self, group: &ast::Group) -> Result<(), Error> {
         match &group.kind {
-            GroupKind::CaptureIndex(_) => self.compile(&group.ast),
+            GroupKind::CaptureIndex(index) => {
+                let index = *index as usize;
+                if index > MAX_GROUPS {
+                    return Err(Error::TooLarge {
+                        what: "capture group count",
+                        offset: group.span.start.offset,
+                    });
+                }
+                self.groups = self.groups.max(index);
+                self.push(Inst::Save(2 * index), &group.span)?;
+                self.compile(&group.ast)?;
+                self.push(Inst::Save(2 * index + 1), &group.span)?;
+                Ok(())
+            }
             GroupKind::NonCapturing(flags) => {
                 if !flags.items.is_empty() {
                     return Err(unsupported("inline flags", &group.span));
@@ -633,6 +654,11 @@ fn first_set(insts: &[Inst], classes: &[Class], start: usize) -> Option<FirstSet
                 stack.push(second);
             }
             Inst::Jump(target) => stack.push(target),
+            Inst::Save(_) => {
+                if pc + 1 < insts.len() {
+                    stack.push(pc + 1);
+                }
+            }
             Inst::Assert(_) => {
                 if pc + 1 < insts.len() {
                     stack.push(pc + 1);

@@ -253,6 +253,13 @@ fn closure(program: &Program, seeds: &[usize], at_start: bool, at_end: bool) -> 
                 stack.push(first);
             }
             Inst::Jump(target) => stack.push(target),
+            // Capture slots are invisible to the DFA: it tracks group 0 only, so
+            // `Save` is an epsilon edge and never becomes part of a state.
+            Inst::Save(_) => {
+                if pc + 1 < program.insts.len() {
+                    stack.push(pc + 1);
+                }
+            }
             Inst::Assert(AssertKind::Start) => {
                 if at_start && pc + 1 < program.insts.len() {
                     stack.push(pc + 1);

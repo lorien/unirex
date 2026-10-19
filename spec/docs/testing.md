@@ -39,17 +39,21 @@ against CPython `re`.
    `findall`, `find`, and `is_match` with CPython `re` on UCS-1, UCS-2, UCS-4,
    and lone-surrogate inputs. It also alternates two compiled patterns,
    exercises the GIL-detach threshold, and scans the same patterns from several
-   threads. Capture groups are group 0 only; the smoke test uses group-free
-   patterns for `findall`.
-9. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
+   threads. The smoke test compares `findall` on capture patterns too, so group
+   tuples and unmatched-group empty strings are checked against `re`.
+9. **Capture-cost diagnostic.** `tools/bench_captures.py` compares `findall`
+   with and without capture groups on the same posts. It does not pin CPUs and
+   is not a published number; it exists to show that extraction is charged per
+   matched span rather than per haystack.
+10. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
    untimed, compiles once, and times `findall` per post. It verifies the full
    mention counts. The full corpus is not part of ordinary CI.
-10. **Report rendering.** `tools/telegram_report.py` reads a completed matrix
+11. **Report rendering.** `tools/telegram_report.py` reads a completed matrix
     from `var/bench-results/`, checks that every expected point and full-corpus
     count is present, and writes the tracked Markdown report, the SVG charts,
     and the gitignored HTML twin. It is not part of ordinary CI because the
     full matrix is too large; it is run after a matrix completes.
-11. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+12. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands
@@ -69,6 +73,7 @@ Run from the repository root:
     cargo publish --dry-run --manifest-path packaging/crates-stub/Cargo.toml
     PYTHONPATH=var/py python3 tools/test_python_binding.py
     PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90
+    PYTHONPATH=var/py python3 tools/bench_captures.py --limit 200000 --repeat 3
     python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 Timing assertions use release builds. A debug-build timing test is not

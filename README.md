@@ -8,7 +8,7 @@ backtracking.
 
 **Status: experimental, not a `re` replacement.** The engine implements a
 strict Python syntax subset with group-0 matching only. Python `\w`, `\d`,
-`\s`, `\b`, `$`, flags, and capture values are not implemented yet; patterns
+`\s`, `\b`, `$`, flags, and match objects are not implemented yet; patterns
 that use them are rejected with a positioned error rather than reinterpreted
 with Rust `regex` semantics. The one-thread end-to-end time is at parity with
 CPython `re` on the Telegram benchmark; four-thread scaling is worse than Rust
@@ -55,6 +55,10 @@ rx = unirex.compile(r"@[a-zA-Z][a-zA-Z0-9_]{4,31}")
 rx.findall("hello @alice123")  # ['@alice123']
 rx.find("hello @alice123")
 rx.is_match("hello @alice123")
+
+grouped = unirex.compile(r"@([a-zA-Z])([a-zA-Z0-9_]{4,31})")
+grouped.groups                 # 2
+grouped.findall("hello @alice123")  # [('a', 'lice123')]
 ```
 
 ## Why UCS instead of UTF-8
@@ -74,8 +78,8 @@ prefilter skips the bulk of the work.
 
 - Literals and escaped metacharacters, `.`, and explicit character classes and
   ranges including negation.
-- Alternation and grouping. Capture groups are accepted but only group 0 is
-  exposed.
+- Alternation and grouping. Capture values are available through `findall`
+  and the Rust slot API; match objects are not implemented yet.
 - Greedy repetition: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
 - Anchors `^`, `\A`, `\Z`, `\z`.
 - Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
@@ -128,7 +132,7 @@ code point.
 | 5. PyO3 binding and end-to-end benchmark | implemented on CPython 3.13 GIL |
 | Continuous integration | not set up |
 
-Known gaps: capture values, Python `\w`/`\d`/`\s`, Python word boundaries,
+Known gaps: match objects, Python `\w`/`\d`/`\s`, Python word boundaries,
 `$`, flags, lazy repetition, and verification on CPython versions other than
 3.13 and on free-threaded builds. See `spec/docs/milestones.md`.
 

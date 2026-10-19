@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use pyo3::Bound;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyString};
+use pyo3::types::{PyList, PyString, PyTuple};
 
-use crate::{Regex as CoreRegex, Scratch, Ucs};
+use crate::{Match as CoreMatch, Regex as CoreRegex, Scratch, Ucs};
 
 /// Long haystacks release the GIL around the scan. Short strings stay
 /// GIL-held, matching CPython `re` and the `rurex` short-string path.
@@ -84,23 +84,50 @@ impl PyRegex {
         })
     }
 
-    /// Return all non-overlapping matches as strings.
+    /// Number of capture groups, excluding group 0.
+    #[getter]
+    fn groups(&self) -> usize {
+        self.inner.group_count()
+    }
+
+    /// Return all non-overlapping matches.
     ///
-    /// The current engine exposes group 0 only; patterns with capture groups
-    /// return the whole match, not group tuples.
+    /// With no capture groups this is a list of matched strings, matching
+    /// `re.findall`. With groups it is a list of group strings, or a list of
+    /// tuples of group strings when the pattern has more than one group.
+    /// Unmatched groups appear as empty strings, as in `re.findall`.
     fn findall<'py>(&self, py: Python<'py>, text: &Bound<'_, PyString>) -> PyResult<Py<PyList>> {
         let ucs = py_ucs(text)?;
         let mut scratch = self.take_scratch();
         let list = PyList::empty(py);
-        let result = if ucs.len() < DETACH_THRESHOLD {
-            for found in self.inner.find_iter_with(&mut scratch, ucs) {
-                list.append(substring(py, text, found.start(), found.end())?)?;
+        let groups = self.inner.group_count();
+        let result = if groups == 0 {
+            if ucs.len() < DETACH_THRESHOLD {
+                for found in self.inner.find_iter_with(&mut scratch, ucs) {
+                    list.append(substring(py, text, found.start(), found.end())?)?;
+                }
+                Ok(list)
+            } else {
+                let spans = collect_spans(&self.inner, &mut scratch, ucs, py);
+                for (start, end) in spans {
+                    list.append(substring(py, text, start, end)?)?;
+                }
+                Ok(list)
             }
-            Ok(list)
         } else {
-            let spans = collect_spans(&self.inner, &mut scratch, ucs, py);
-            for (start, end) in spans {
-                list.append(substring(py, text, start, end)?)?;
+            let width = 2 * (groups + 1);
+            let found = collect_spans_and_slots(&self.inner, &mut scratch, ucs, py, width);
+            for (start, end, slots) in found {
+                if groups == 1 {
+                    list.append(group_value(py, text, start, &slots, 1)?)?;
+                } else {
+                    let mut values = Vec::with_capacity(groups);
+                    for index in 1..=groups {
+                        values.push(group_value(py, text, start, &slots, index)?);
+                    }
+                    list.append(PyTuple::new(py, values)?)?;
+                }
+                let _ = end;
             }
             Ok(list)
         };
@@ -168,6 +195,58 @@ fn collect_spans(
         py.detach(run)
     } else {
         run()
+    }
+}
+
+/// Collect match spans and their capture slots, releasing the GIL for long
+/// haystacks.
+fn collect_spans_and_slots(
+    regex: &CoreRegex,
+    scratch: &mut Scratch,
+    ucs: Ucs<'_>,
+    py: Python<'_>,
+    width: usize,
+) -> Vec<(usize, usize, Vec<usize>)> {
+    let mut run = || {
+        let mut spans = Vec::new();
+        for found in regex.find_iter_with(scratch, ucs) {
+            spans.push((found.start(), found.end()));
+        }
+        let mut slots = vec![usize::MAX; width];
+        let mut out = Vec::with_capacity(spans.len());
+        for (start, end) in spans {
+            slots.fill(usize::MAX);
+            let m = CoreMatch::new(start, end);
+            if regex.captures(scratch, ucs, m, &mut slots) {
+                out.push((start, end, slots.clone()));
+            }
+        }
+        out
+    };
+    if ucs.len() >= DETACH_THRESHOLD {
+        py.detach(run)
+    } else {
+        run()
+    }
+}
+
+/// A single group as a `str`, with unmatched groups becoming `""`.
+///
+/// `start` is the whole-match start, used to produce the empty string without
+/// an extra allocation path.
+fn group_value<'py>(
+    py: Python<'py>,
+    text: &Bound<'_, PyString>,
+    start: usize,
+    slots: &[usize],
+    index: usize,
+) -> PyResult<Bound<'py, PyString>> {
+    let lo = slots[2 * index];
+    let hi = slots[2 * index + 1];
+    if lo == usize::MAX || hi == usize::MAX {
+        substring(py, text, start, start)
+    } else {
+        substring(py, text, lo, hi)
     }
 }
 

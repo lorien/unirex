@@ -33,6 +33,14 @@ PATTERNS = [
     r"a\Z",
     r"a\Z|b",
     "[a-c]+x",
+    r"(a)(b)",
+    r"(a+)(b+)",
+    r"(a)+",
+    r"(a)?(b)",
+    r"(a)|(b)",
+    r"([a-c]+)(x)",
+    r"((a)*)",
+    r"()(a)",
 ]
 HAYSTACKS = [
     "",
@@ -112,6 +120,19 @@ def main() -> int:
         thread.join()
     if failures:
         print(f"THREAD MISMATCH: {failures[0]}")
+        return 1
+
+    if unirex.compile("(a)(b)").groups != 2:
+        print("GROUPS ATTRIBUTE MISMATCH")
+        return 1
+    if unirex.compile("ab").groups != 0:
+        print("GROUPS ATTRIBUTE MISMATCH for group-free pattern")
+        return 1
+
+    long_grouped = unirex.compile(r"([a-c]+)(x)")
+    long_text = "q" * 5000 + "abcx" + "q" * 5000
+    if long_grouped.findall(long_text) != [("abc", "x")]:
+        print("DETACH GROUP MISMATCH")
         return 1
 
     print(f"python binding smoke test ok: {len(PATTERNS)} patterns")

@@ -81,6 +81,41 @@ impl Regex {
         Scratch::new(self.prog.insts.len())
     }
 
+    /// Number of capture groups, excluding group 0.
+    pub fn group_count(&self) -> usize {
+        self.prog.groups
+    }
+
+    /// Fill `slots` with the capture spans of `m`.
+    ///
+    /// `slots` must hold `2 * (group_count() + 1)` entries and is interpreted as
+    /// `[start0, end0, start1, end1, ...]`. Unmatched groups receive
+    /// [`usize::MAX`] for both of their slots.
+    ///
+    /// The DFA finds the match span on the hot path; this pass re-derives group
+    /// spans by running the PikeVM over `m` only, never over the whole haystack.
+    /// Returns `false` when the span cannot be re-derived, which callers must
+    /// treat as "groups unavailable" rather than as a pattern error.
+    pub fn captures(
+        &self,
+        scratch: &mut Scratch,
+        hay: Ucs<'_>,
+        m: Match,
+        slots: &mut [usize],
+    ) -> bool {
+        match hay {
+            Ucs::Ucs1(units) => {
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+            }
+            Ucs::Ucs2(units) => {
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+            }
+            Ucs::Ucs4(units) => {
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+            }
+        }
+    }
+
     /// Whether the pattern matches anywhere in `hay`.
     pub fn is_match(&self, hay: Ucs<'_>) -> bool {
         self.find(hay).is_some()

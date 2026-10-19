@@ -34,7 +34,8 @@ Status: planned.
 - Flags `i`, `m`, `s`, and `x`, including scoped flags. Python `x` stripping
   is ASCII-only.
 - Differential tests against Python `re` on generated UCS-1, UCS-2, and UCS-4
-  strings, including capture values in unbounded loops.
+  strings, including capture values in unbounded loops. Capture values for
+  `findall` are implemented ahead of the rest of this milestone.
 - Decide whether `a{,2}`, `(?#...)`, and `\N{...}` belong in the dialect.
 
 Acceptance: Python differential suite passes on all three kinds, including

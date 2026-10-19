@@ -25,8 +25,9 @@ Accepted:
 - Alternation.
 - Greedy `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`.
 - Anchors `^`, `\A`, `\Z`, `\z`.
-- Grouping: `(...)`, `(?:...)`, and capture groups. Capture values are not
-  exposed yet; only group 0 is returned.
+- Grouping: `(...)`, `(?:...)`, and capture groups. Capture values are exposed
+  through the Python `findall` method and the Rust `Regex::captures` slot API;
+  `Match` itself still reports group 0 only.
 - Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
   octal escapes.
 
@@ -148,7 +149,8 @@ milestone 2 or later:
 - Python `\w`, `\d`, `\s`, and word boundaries.
 - Flags `i`, `m`, `s`, `x`, including scoped flags.
 - Lazy repetition and named capture groups.
-- Capture values, including unbounded-loop behavior.
+- Match objects, `sub`, `split`, and named capture groups. Capture values work
+  for `findall` only, including the last-iteration rule in unbounded loops.
 - `a{,2}` and `(?#...)`.
 - `\N{...}` named character escapes.
 - ASCII/UNICODE flag semantics.
