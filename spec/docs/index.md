@@ -75,3 +75,7 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 - [adr/0017-capture-extraction.md](adr/0017-capture-extraction.md) — capture
   slots stay out of the DFA; group spans are recovered over the match span with
   a bounded backtracker and a PikeVM fallback.
+- [adr/0018-bounded-candidate-work.md](adr/0018-bounded-candidate-work.md) —
+  the anchored candidate loop is capped and falls back to the PikeVM, keeping
+  search linear instead of quadratic, after a reverse-pass design produced
+  wrong leftmost-first spans.

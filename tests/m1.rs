@@ -111,6 +111,42 @@ fn python_empty_match_iteration() {
 }
 
 /// Spans produced by CPython `re` for the same patterns and haystacks.
+/// The candidate loop must not be quadratic: `a+b` over a run of `a` used to
+/// restart a full anchored scan per prefilter hit.
+///
+/// Timing assertions only make sense in a release build; the debug build skips
+/// this, as `spec/docs/testing.md` requires.
+#[test]
+fn search_time_is_linear_in_haystack_length() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    fn best(pattern: &str, hay: &str) -> Duration {
+        let re = Regex::new(pattern).unwrap();
+        let units: Vec<u8> = hay.bytes().collect();
+        let mut scratch = re.scratch();
+        let mut fastest = Duration::MAX;
+        for _ in 0..3 {
+            let start = Instant::now();
+            let found = re.find_with(&mut scratch, Ucs::Ucs1(&units));
+            let elapsed = start.elapsed();
+            assert_eq!(found, None, "expected no match for {pattern:?}");
+            fastest = fastest.min(elapsed);
+        }
+        fastest
+    }
+
+    for pattern in ["a+b", "a+b$", "(a|aa)+b"] {
+        let small = best(pattern, &"a".repeat(8_000));
+        let large = best(pattern, &"a".repeat(32_000));
+        // Four times the input; linear work grows by about four, quadratic by 16.
+        assert!(
+            large < small * 8,
+            "pattern {pattern:?} looks superlinear: {small:?} -> {large:?}"
+        );
+    }
+}
+
 #[test]
 fn python_classes_boundaries_and_end_anchor() {
     type Case = (&'static str, &'static str, &'static [(usize, usize)]);

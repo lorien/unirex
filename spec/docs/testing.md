@@ -33,30 +33,34 @@ against CPython `re`.
    fallback rather than a wrong result.
 6. **Rust `regex` differential tests.** A smaller common subset where Python
    and Rust agree; this is not the semantic authority.
-7. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
+7. **Linearity test.** `search_time_is_linear_in_haystack_length` runs only in
+   release builds and asserts that four times the haystack costs less than eight
+   times the time for `a+b`, `a+b$`, and `(a|aa)+b`, guarding the bound in
+   ADR-0018.
+8. **Adversarial-time tests.** `(a+)+b` and `(x+x+)+y` over 500 units must
    finish within a fixed budget.
-8. **Python binding smoke test.** `tools/test_python_binding.py` compares
+9. **Python binding smoke test.** `tools/test_python_binding.py` compares
    `findall`, `find`, and `is_match` with CPython `re` on UCS-1, UCS-2, UCS-4,
    and lone-surrogate inputs. It also alternates two compiled patterns,
    exercises the GIL-detach threshold, and scans the same patterns from several
    threads. The smoke test compares `findall` on capture patterns too, so group
    tuples and unmatched-group empty strings are checked against `re`.
-9. **Capture cost.** `capture_costs` is an ignored test that prints per-match
+10. **Capture cost.** `capture_costs` is an ignored test that prints per-match
    cost for the backtracker and the PikeVM fallback across span lengths. It is
    the only way to see the fallback path, which is silent at runtime.
-10. **Capture-cost diagnostic.** `tools/bench_captures.py` compares `findall`
+11. **Capture-cost diagnostic.** `tools/bench_captures.py` compares `findall`
    with and without capture groups on the same posts. It does not pin CPUs and
    is not a published number; it exists to show that extraction is charged per
    matched span rather than per haystack.
-11. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
+12. **End-to-end benchmark.** `tools/bench_python.py` loads the corpus
    untimed, compiles once, and times `findall` per post. It verifies the full
    mention counts. The full corpus is not part of ordinary CI.
-12. **Report rendering.** `tools/telegram_report.py` reads a completed matrix
+13. **Report rendering.** `tools/telegram_report.py` reads a completed matrix
     from `var/bench-results/`, checks that every expected point and full-corpus
     count is present, and writes the tracked Markdown report, the SVG charts,
     and the gitignored HTML twin. It is not part of ordinary CI because the
     full matrix is too large; it is run after a matrix completes.
-13. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
+14. **Planned for milestone 2.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
 ## Commands

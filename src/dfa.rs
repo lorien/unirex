@@ -14,6 +14,16 @@ use crate::ucs::{UcsKind, Unit};
 const MAX_CODEPOINT: u32 = 0x10FFFF;
 const MAX_DFA_STATES: usize = 4096;
 const MAX_TRANSITION_CELLS: usize = 4_000_000;
+
+/// Total units an anchored candidate scan may consume, as a multiple of the
+/// haystack length.
+///
+/// The candidate loop restarts an anchored scan at each prefilter hit, which is
+/// quadratic when scans survive to the end of the haystack, as in `a+b` over a
+/// run of `a`. Exceeding this budget aborts to the PikeVM, whose O(n * m) bound
+/// is unconditional, so the search as a whole stays linear in the haystack with
+/// a constant factor.
+const MAX_CANDIDATE_WORK_FACTOR: usize = 8;
 const UNKNOWN: u32 = u32::MAX;
 const DEAD: u32 = u32::MAX - 1;
 
@@ -311,16 +321,24 @@ pub(crate) fn find_candidates<U: Unit>(
     let Some(scan) = first.scan::<U>() else {
         return FindResult::NoMatch;
     };
+    let budget = MAX_CANDIDATE_WORK_FACTOR.saturating_mul(hay.len().saturating_add(1));
+    let mut spent = 0usize;
     let mut pos = search_start;
     loop {
         let Some(candidate) = scan.find_next(hay, pos) else {
             return FindResult::NoMatch;
         };
-        match find_at(program, cache, hay, candidate, retry_nonempty_at) {
+        let (result, walked) = find_at(program, cache, hay, candidate, retry_nonempty_at);
+        spent = spent.saturating_add(walked);
+        match result {
             FindResult::Match(found) => return FindResult::Match(found),
-            FindResult::NoMatch => pos = candidate + 1,
             FindResult::Overflow => return FindResult::Overflow,
+            FindResult::NoMatch => {}
         }
+        if spent > budget {
+            return FindResult::Overflow;
+        }
+        pos = candidate + 1;
     }
 }
 
@@ -330,10 +348,10 @@ fn find_at<U: Unit>(
     hay: &[U],
     start: usize,
     retry_nonempty_at: Option<usize>,
-) -> FindResult {
+) -> (FindResult, usize) {
     let mut state_id = match cache.initial_state(start == 0, start == hay.len()) {
         Some(id) => id,
-        None => return FindResult::Overflow,
+        None => return (FindResult::Overflow, 0),
     };
     let mut best = if cache.matched[state_id] && retry_nonempty_at != Some(start) {
         Some(start)
@@ -344,11 +362,11 @@ fn find_at<U: Unit>(
     while pos < hay.len() {
         let unit: u32 = hay[pos].into();
         let Some(class_id) = cache.class_id(U::KIND, unit) else {
-            return FindResult::Overflow;
+            return (FindResult::Overflow, pos - start);
         };
         let Some(next) = cache.transition(program, state_id, class_id) else {
             if cache.overflowed() {
-                return FindResult::Overflow;
+                return (FindResult::Overflow, pos - start);
             }
             break;
         };
@@ -361,9 +379,10 @@ fn find_at<U: Unit>(
     if pos == hay.len() && cache.final_match(program, state_id) {
         best = Some(pos);
     }
+    let walked = pos.saturating_sub(start);
     match best {
-        Some(end) => FindResult::Match(Match::new(start, end)),
-        None => FindResult::NoMatch,
+        Some(end) => (FindResult::Match(Match::new(start, end)), walked),
+        None => (FindResult::NoMatch, walked),
     }
 }
 
