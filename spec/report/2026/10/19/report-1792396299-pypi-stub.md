@@ -46,19 +46,30 @@
 - [open] The placeholder has no `project.urls` because the repository has no
   git remote. Add `Repository`/`Homepage` once a remote exists; metadata is
   editable without a new release.
-- [open] Future functional releases need real wheels. `maturin` is not
+- [acted] Future functional releases need real wheels. `maturin` is not
   installed on the development machine, and the extension is non-abi3, so a
   release needs one wheel per CPython version and platform.
+  Resolved: `maturin` 1.15.0 is installed in `var/venv-packaging`, a
+  `cp313-cp313-manylinux` release wheel was built and verified from a clean
+  install, and the non-abi3 wheel-per-version rule is now in
+  `spec/docs/publishing.md`.
 
 ### Tooling/process
 
 - [acted] `build` and `maturin` are absent, so the placeholder is built by
   calling `setuptools.build_meta.build_sdist` and `build_wheel` directly. This
   avoids installing a build frontend for a metadata-only distribution.
+  Superseded: the frontend is installed after all. Rebuilding the same sources
+  with `python3 -m build` produced the same wheel contents except `WHEEL` and
+  `RECORD`, because the isolated environment resolved setuptools 84.0.0 while
+  the system install was 78.1.1. Direct backend calls hide that difference, so
+  `spec/docs/publishing.md` now documents the frontend only.
 - [acted] The system `twine` at `/usr/local/bin/twine` is broken: its shebang
   points at `/usr/bin/python3`, where the `twine` package is not installed, so
   `python3 -m twine` fails and the script raises `ImportError`. A virtual
   environment under `var/venv-twine` with `twine 7.0.0` worked. Either repair
   the system install or record the virtual environment as the supported path.
+  Resolved: one disposable `var/venv-packaging` now holds `build`, `maturin`,
+  and `twine`, and that is the documented toolchain.
 - [acted] Build output went to `var/pypi-stub-dist/` rather than a `dist/`
   directory inside the checkout, so nothing generated entered the tree.

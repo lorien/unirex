@@ -11,6 +11,17 @@ crate. The Python distribution is `unirex` on PyPI; the Rust crate will be
 - crates.io: name not reserved yet. Publishing needs an account token that is
   not present on the development machine.
 
+## Toolchain
+
+Release tooling is not a project dependency. Keep it in one disposable
+virtual environment, because the system `twine` install is broken on the
+development machine:
+
+    python3 -m venv var/venv-packaging
+    var/venv-packaging/bin/pip install build maturin twine
+
+Validated versions: `build` 1.6.1, `maturin` 1.15.0, `twine` 7.0.0.
+
 ## Placeholder sources
 
 The placeholder lives in `packaging/pypi-stub/` and is built from this
@@ -18,17 +29,30 @@ repository so the published artifacts are reproducible. It declares
 `packages = []`, so `import unirex` fails with `ModuleNotFoundError` and the
 placeholder can never shadow the real extension module.
 
-Build and upload without touching the checkout:
+Build and upload with the `build` frontend, never by calling
+`setuptools.build_meta` directly. The frontend creates an isolated environment
+from `[build-system] requires`, which is what validates the pin; a direct call
+silently uses whatever setuptools is installed and produces different
+artifacts. The recorded `0.0.1` upload was built both ways to check this: the
+wheel contents were identical except `WHEEL` and `RECORD`, because the
+frontend resolved setuptools 84.0.0 while the system install was 78.1.1.
 
-    mkdir -p var/pypi-stub-dist
-    cd packaging/pypi-stub
-    python3 -c 'from setuptools import build_meta; print(build_meta.build_sdist("../../var/pypi-stub-dist")); print(build_meta.build_wheel("../../var/pypi-stub-dist"))'
-    cd -
-    python3 -m twine check var/pypi-stub-dist/*
-    python3 -m twine upload --non-interactive --repository pypi var/pypi-stub-dist/*
+    var/venv-packaging/bin/python -m build --outdir var/pypi-stub-dist packaging/pypi-stub
+    var/venv-packaging/bin/twine check var/pypi-stub-dist/*
+    var/venv-packaging/bin/twine upload --non-interactive --repository pypi var/pypi-stub-dist/*
 
-`twine` is not a project dependency; use any environment that has it. Build
-output stays under `var/`, which is gitignored.
+Build output stays under `var/`, which is gitignored.
+
+## Functional wheels
+
+`maturin` builds the real extension from the repository root. The extension is
+non-abi3, so every CPython minor version and platform needs its own wheel:
+
+    var/venv-packaging/bin/maturin build --release --out var/maturin-dist
+
+A release wheel was verified this way on CPython 3.13: it installs into a clean
+virtual environment and answers `findall` correctly. Upload a real release with
+`maturin publish` or by passing the built wheels to `twine upload`.
 
 ## Version policy
 
