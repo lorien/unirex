@@ -17,7 +17,7 @@ After task is done do these aciton (in this very order):
 - create new report file (see `report_tracking.md`); for a task taken from
   `spec/docs/plan.md`, the report archives its record
 - reconcile report markers (see `report_tracking.md`): run
-  `grep -rn "\[open\]|\[needs-decision\]" spec/report/` and mark `[acted]`
+  `rg -n '\[(open|needs-decision)\]' spec/report/` and mark `[acted]`
   any item this work resolved, appending a one-line note; the reported set
   must contain only items that are genuinely still open or undecided
 - if the task came from `spec/docs/plan.md`, remove its record from the plan

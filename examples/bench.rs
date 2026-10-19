@@ -396,7 +396,7 @@ fn print_usage() {
            --help               show this help\n\
          \n\
          environment:\n\
-           RUREX_TG_DATA        corpus path, equivalent to --corpus\n\
+           UNIREX_TG_DATA       corpus path, equivalent to --corpus\n\
          \n\
          corpus cache: {DATA_CACHE}\n\
          public URL:   {DATA_URL}\n\
@@ -528,11 +528,11 @@ fn resolve_corpus(opts: &Options) -> Result<(PathBuf, Option<String>), String> {
         }
         return Ok((path.clone(), Some(sha256_file(path)?)));
     }
-    if let Some(value) = std::env::var_os("RUREX_TG_DATA") {
+    if let Some(value) = std::env::var_os("UNIREX_TG_DATA") {
         let path = PathBuf::from(value);
         if !path.exists() {
             return Err(format!(
-                "RUREX_TG_DATA points to a missing file: {}",
+                "UNIREX_TG_DATA points to a missing file: {}",
                 path.display()
             ));
         }

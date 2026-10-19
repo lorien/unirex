@@ -73,5 +73,6 @@ numbers are marked provisional in the docs.
 - [open] `loadavg` after a run includes the benchmark's own workers. Use the
   per-worker efficiency and frequency for contamination decisions; a
   process-external load sampler can be added later.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

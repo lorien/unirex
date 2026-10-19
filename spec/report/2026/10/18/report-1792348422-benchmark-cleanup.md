@@ -69,5 +69,6 @@ PikeVM. The remaining gap is in per-candidate DFA setup and transition lookup.
 - [acted] `bytes` timing varied with load and frequency. The load-aware
   runner now pins workers, warms up, measures CPU time, and rejects
   contaminated runs.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

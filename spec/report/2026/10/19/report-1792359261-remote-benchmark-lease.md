@@ -102,5 +102,6 @@ than the original laptop. No `rurex` engine was run.
 - [open] Python frequency sampling showed idle values on some points even when
   CPU efficiency was near 1.0. Treat the Python frequency field as diagnostic,
   not definitive; engine-only frequency samples were stable at 4.6 to 4.8 GHz.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

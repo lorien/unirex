@@ -6,7 +6,7 @@
   toolchain is selected by `rust-toolchain.toml`.
 - Cargo.
 - Network access for the first Telegram benchmark download, unless the corpus
-  is supplied with `--corpus` or `RUREX_TG_DATA`.
+  is supplied with `--corpus` or `UNIREX_TG_DATA`.
 - Python 3 is needed for the randomized differential harness and the Python
   binding/benchmark.
 - PyO3 and maturin are needed for the Python binding.
@@ -78,7 +78,7 @@ number. It never changes the CPU governor.
 
 The benchmark downloads and SHA-256 verifies the corpus into
 `var/bench-data/tg-1m.json.gz` on first use. Use `--corpus` or
-`RUREX_TG_DATA` for an offline copy. It does not need another checkout.
+`UNIREX_TG_DATA` for an offline copy. It does not need another checkout.
 
 The Python harness builds and runs `examples/oracle.rs`, then compares
 `find_iter` spans with CPython `re`. It accepts `--patterns N` and `--seed S`.

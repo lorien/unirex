@@ -9,7 +9,7 @@ Ad-hoc work requested by the owner: make the benchmark portable and run it.
   convenience `find` and `find_iter` still allocate a temporary scratch.
   Added a reuse test across UCS-1 and UCS-2 haystacks.
 - Added `examples/bench.rs`, a self-contained engine-only benchmark:
-  - Corpus resolution from `--corpus`, `RUREX_TG_DATA`, the verified
+  - Corpus resolution from `--corpus`, `UNIREX_TG_DATA`, the verified
     `var/bench-data/tg-1m.json.gz` cache, or the public release URL.
   - Streaming gzip and JSONL parsing with `flate2` and `serde_json`.
   - Narrowest CPython kind per post, with flat UCS-1/2/4 buffers.
@@ -88,5 +88,6 @@ Raw JSON is under `var/bench-results/` and is intentionally not committed.
 
 - [open] `ureq` and `sha2` add dev-only build weight. They are acceptable for
   a self-contained downloader, but revisit if build time becomes a problem.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

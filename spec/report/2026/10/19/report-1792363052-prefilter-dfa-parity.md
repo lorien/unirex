@@ -88,8 +88,9 @@ four threads.
   benchmark out of ordinary CI.
 - [open] The Python frequency samples remain noisy; the 2-4 thread Python
   medians are reported for completeness, not as scaling evidence.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.
 
 ### Tooling/process
 

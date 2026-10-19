@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end Telegram benchmark for the unirex Python binding.
 
-The corpus is resolved from --corpus, RUREX_TG_DATA, the verified cache under
+The corpus is resolved from --corpus, UNIREX_TG_DATA, the verified cache under
 var/bench-data, or the public release URL. Loading and compilation are outside
 the timed window. Each worker scans its slice once after a barrier.
 
@@ -43,11 +43,11 @@ def resolve_corpus(path: Path | None) -> Path:
         if not path.exists():
             raise SystemExit(f"corpus not found: {path}")
         return path
-    env = os.environ.get("RUREX_TG_DATA")
+    env = os.environ.get("UNIREX_TG_DATA")
     if env:
         path = Path(env)
         if not path.exists():
-            raise SystemExit(f"RUREX_TG_DATA points to a missing file: {path}")
+            raise SystemExit(f"UNIREX_TG_DATA points to a missing file: {path}")
         return path
     if DATA_CACHE.exists():
         return DATA_CACHE

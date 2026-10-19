@@ -97,5 +97,6 @@ runs were not meaningfully faster. Free-threaded CPython was not tested.
 - [acted] End-to-end timings varied with system load. The Python runner now
   supports CPU pinning, warmups, thread CPU time, load/frequency reporting,
   and efficiency-based retries.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

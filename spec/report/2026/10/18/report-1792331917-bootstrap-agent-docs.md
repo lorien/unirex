@@ -42,9 +42,10 @@ Ad-hoc work: the repository was empty and had no git history.
 
 - [open] Automate the checks in `testing.md` (local link check and marker
   reconciliation) in CI once CI exists.
-- [open] The marker command in `spec/skills/work.md` uses
+- [acted] The marker command in `spec/skills/work.md` uses
   `grep -rn "\[open\]|\[needs-decision\]"`, where the unescaped `|` is
   literal in basic regular expressions, so it matches nothing. Use
   `rg -n '\[(open|needs-decision)\]' spec/report/` as documented in
   `testing.md`; `work.md` is copied verbatim and must not be edited in this
   repository.
+  Resolved: the command now uses the `rg` form from `testing.md`.

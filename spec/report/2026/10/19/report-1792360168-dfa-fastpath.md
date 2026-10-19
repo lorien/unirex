@@ -88,5 +88,6 @@ End-to-end Python, GIL:
   the memory cap keeps the fallback safe.
 - [open] Python frequency samples remain diagnostic; engine-only frequency
   samples were stable at 4.6-4.8 GHz.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

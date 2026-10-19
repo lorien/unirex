@@ -62,6 +62,7 @@ creating `experiments/0001-*` or writing code. The proposal format is in
 
 - [open] The CI task in `plan.md` should also run the docs link check and the
   marker reconciliation from `testing.md`.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue noted in the bootstrap report; use the `rg`
   form from `testing.md` until the upstream workflow file is fixed.
+  Resolved: the command now uses the `rg` form from `testing.md`.

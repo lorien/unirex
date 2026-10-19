@@ -97,7 +97,7 @@ subset and compares `find_iter` spans with CPython `re`.
 
 `examples/bench.rs` is a self-contained engine-only Telegram benchmark. It
 downloads the corpus into `var/bench-data/` and verifies its SHA-256, or uses
-`--corpus` / `RUREX_TG_DATA` for an offline copy. No other checkout is needed.
+`--corpus` / `UNIREX_TG_DATA` for an offline copy. No other checkout is needed.
 
 Modes: `ucs` (this engine), `bytes` and `str` (Rust `regex` baselines).
 

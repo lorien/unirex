@@ -22,5 +22,6 @@
 
 - [acted] Used an IPv4 literal search over the documentation and reports; it
   found no addresses.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.

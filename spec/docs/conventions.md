@@ -75,11 +75,23 @@ at decision time. The format is defined in
 - Test UCS-1, UCS-2, UCS-4, lone surrogates, empty matches, and the GIL-detach
   threshold when the binding changes.
 
+## Naming
+
+- Project-owned identifiers use the `unirex` name: the crate, the Python
+  distribution, the extension module, and environment variables such as
+  `UNIREX_TG_DATA`. The former name `exp_rurex` must not appear in code or
+  documentation; a report may name a removed identifier only when recording
+  its removal.
+- `rurex` names only the external project at `github.com/lorien/rurex`, which
+  publishes the benchmark corpus release. It never names this crate, its
+  tooling, or its artifacts. Keep its download URL unchanged; the URL is data
+  provenance, not a dependency.
+
 ## Benchmarks
 
 - A performance claim needs a reproducible benchmark and a recorded baseline.
 - The benchmark must be self-contained: corpus from `--corpus`,
-  `RUREX_TG_DATA`, or the public URL cached under `var/`. Never reference
+  `UNIREX_TG_DATA`, or the public URL cached under `var/`. Never reference
   another checkout or a machine-specific path.
 - Verify the corpus SHA-256 before using it. Do not commit the corpus or raw
   result files.

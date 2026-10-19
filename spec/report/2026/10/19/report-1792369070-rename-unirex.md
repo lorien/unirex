@@ -38,11 +38,16 @@ The renamed matrix is effectively unchanged:
 - [acted] Updated `AGENTS.md`, `README.md`, and all current `spec/docs/`
   references to `unirex`.
 - [acted] Updated the remote checkout path in `spec/docs/dev.md`.
-- [open] The local checkout directory keeps its previous directory name until
+- [acted] The local checkout directory keeps its previous directory name until
   the owner renames it after this commit. All repository content uses
   `unirex`.
-- [open] No previous-name compatibility alias was added. Old installed
+  Resolved: the local checkout is `/web/unirex` and no previous-name directory
+  remains under `/web`.
+- [acted] No previous-name compatibility alias was added. Old installed
   extensions and wheels must be removed or replaced.
+  Resolved: the leftover `RUREX_TG_DATA` environment variable was renamed to
+  `UNIREX_TG_DATA` with no fallback, and `spec/docs/conventions.md` now forbids
+  the old name in project-owned identifiers.
 - [open] The generated report records `source workspace snapshot` because the
   remote checkout has no `.git`; future published runs can pass `--commit`.
 

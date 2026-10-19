@@ -18,7 +18,7 @@ number of mentions.
 - Use a custom Rust example, `examples/bench.rs`, not a generic criterion
   benchmark. The workload is one pass over a fixed corpus, not a repeated
   microbenchmark with warm-up.
-- Resolve the corpus in this order: `--corpus`, `RUREX_TG_DATA`,
+- Resolve the corpus in this order: `--corpus`, `UNIREX_TG_DATA`,
   `var/bench-data/tg-1m.json.gz`, then a download from the public release URL.
   Verify SHA-256 before use. The harness never depends on another checkout.
 - Pack each post into the narrowest CPython storage kind and keep flat UCS

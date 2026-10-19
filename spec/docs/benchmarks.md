@@ -6,14 +6,14 @@
 
 Corpus resolution:
 
-1. `--corpus PATH` or `RUREX_TG_DATA`, for an offline or pre-downloaded copy.
+1. `--corpus PATH` or `UNIREX_TG_DATA`, for an offline or pre-downloaded copy.
 2. `var/bench-data/tg-1m.json.gz`, if present and the SHA-256 matches.
 3. Download from the public release URL, verify SHA-256, then cache it.
 4. `--no-download` or a failed download prints the URL and checksum and exits.
 
-The corpus URL is a public release asset. The URL lives under the `rurex`
-project only as data provenance; this benchmark does not import or run the
-`rurex` engine.
+The corpus URL is a public release asset. The URL lives under the external
+`rurex` project only as data provenance; this benchmark does not import or run
+the `rurex` engine.
 
 ## Published report
 

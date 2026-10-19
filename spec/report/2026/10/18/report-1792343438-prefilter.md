@@ -95,5 +95,6 @@ marks rather than mentions.
 
 - [open] The `bytes` baseline varied from 0.15 s to 0.18 s across runs. Use
   more repeats or CPU pinning when comparing small differences.
-- [open] The marker command in `spec/skills/work.md` still contains the
+- [acted] The marker command in `spec/skills/work.md` still contains the
   literal-pipe `grep` issue; use the `rg` form from `testing.md`.
+  Resolved: the command now uses the `rg` form from `testing.md`.
