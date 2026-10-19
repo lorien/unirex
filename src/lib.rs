@@ -87,6 +87,14 @@ impl Regex {
         self.prog.groups
     }
 
+    /// Capture names paired with their group index, in declaration order.
+    pub fn capture_names(&self) -> impl Iterator<Item = (&str, usize)> {
+        self.prog
+            .names
+            .iter()
+            .map(|(name, index)| (name.as_str(), *index))
+    }
+
     /// Fill `slots` with the capture spans of `m`.
     ///
     /// `slots` must hold `2 * (group_count() + 1)` entries and is interpreted as

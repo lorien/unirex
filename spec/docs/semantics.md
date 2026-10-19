@@ -36,12 +36,18 @@ Accepted:
   rather than Rust `regex`.
 - Word boundaries `\b` and `\B`.
 - `$`: end of the haystack, or just before a final newline.
+- Flags `i`, `m`, and `s`, global at the start of the pattern or scoped as
+  `(?i:...)`. Case folding uses tables generated from CPython `re.IGNORECASE`,
+  so special pairs such as `k`/`\u212A`, `s`/`\u017F`, and `i`/`\u0130`
+  behave like CPython.
+- Lazy repetition `*?`, `+?`, `??`, and `{n,m}?`.
+- Named groups `(?P<name>...)`, exposed through the Python `Match` API and
+  `Regex::capture_names`.
 
 Rejected with a positioned error:
 
-- Flags `i`, `m`, `s`, `x`, and every inline or scoped flag group.
-- Lazy repetition.
-- Named capture groups.
+- The `x` flag and every negated flag form.
+- Rust-style `(?<name>...)` group syntax.
 - `\N{...}`, `\p{...}`, and brace hex such as `\x{41}`.
 - Rust assertions `\b{...}`, `\<`, `\>`.
 - Class set operators `&&`, `--`, `~~`, nested classes, and POSIX classes.

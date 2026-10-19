@@ -268,6 +268,9 @@ Milestone 5 uses PyO3 and maturin. `src/python.rs` exposes
   release the GIL around the scan and build result strings afterward.
 - The extension is non-abi3 because the UCS data accessors are outside the
   limited API. Version-specific wheels are expected.
+- `finditer` yields `Match` objects with `span`, `start`, `end`, `group`,
+  `groups`, and `groupdict`; spans and slots are collected up front, so a
+  `Match` never holds a scratch or a haystack borrow.
 - `findall` returns `re`-compatible group tuples when the pattern has groups,
   and matched strings when it has none. Capture extraction happens while the
   match is produced, over the match span only, so it costs work proportional to

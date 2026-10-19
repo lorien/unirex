@@ -273,6 +273,8 @@ fn closure(program: &Program, seeds: &[usize], at_start: bool, at_end: bool) -> 
             }
             // The cache declines these programs before reaching this point.
             Inst::Assert(AssertKind::EndLine)
+            | Inst::Assert(AssertKind::StartLine)
+            | Inst::Assert(AssertKind::EndAnyLine)
             | Inst::Assert(AssertKind::WordBoundary)
             | Inst::Assert(AssertKind::NotWordBoundary) => {}
             Inst::Assert(AssertKind::End) => {

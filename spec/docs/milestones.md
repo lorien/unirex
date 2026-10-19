@@ -25,7 +25,7 @@ conversion exists in the matching path.
 
 ## Milestone 2: Python classes, flags, captures
 
-Status: planned.
+Status: implemented except the `x` flag, `sub`, and `split`.
 
 - Python-equivalent `\w`, `\d`, and `\s` tables generated from CPython data for
   a documented Unicode version; use the word table for `\b` and `\B`.
@@ -42,6 +42,11 @@ Acceptance: Python differential suite passes on all three kinds, including
 empty matches, anchors, multiline, dot, alternation priority, captures,
 unmatched groups, and zero-width stepping. Every remaining divergence is
 documented in `spec/docs/semantics.md`.
+
+Delivered: CPython class tables, word boundaries, `$`, flags `i`/`m`/`s` with
+scoped forms, lazy repetition, named groups, capture values, and `Match`
+objects through `finditer`. Not delivered: the `x` flag (rejected with a
+positioned error), `sub`, `split`, and the full-grammar UCS differential suite.
 
 ## Milestone 3: Prefilter and benchmark
 

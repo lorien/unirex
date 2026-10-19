@@ -7,9 +7,9 @@ UCS-1/UCS-2/UCS-4 string buffers directly, with no UTF-8 transcode and no
 backtracking.
 
 **Status: experimental, not a `re` replacement.** The engine implements a
-strict Python syntax subset. Flags and match objects are not implemented yet;
-patterns that use them are rejected with a positioned error rather than
-reinterpreted with Rust `regex` semantics. The one-thread end-to-end time is at parity with
+strict Python syntax subset. The `x` flag, `sub`, and `split` are not
+implemented yet; patterns that use them are rejected with a positioned error
+rather than reinterpreted with Rust `regex` semantics. The one-thread end-to-end time is at parity with
 CPython `re` on the Telegram benchmark; four-thread scaling is worse than Rust
 `regex`.
 
@@ -86,6 +86,10 @@ prefilter skips the bulk of the work.
 - CPython `\w`, `\d`, `\s` and negations, standalone or inside a bracket class,
   with tables generated from CPython `re` itself.
 - Word boundaries `\b` and `\B`, and `$` before a final newline.
+- Flags `i`, `m`, and `s`, global or scoped as `(?i:...)`, with case folding
+  generated from CPython.
+- Lazy repetition (`*?`, `+?`, `??`, `{n,m}?`) and named groups
+  (`(?P<name>...)`).
 
 Python numeric escape rules are enforced: outside a class, `\1` and `\11` are
 backreferences and are rejected; inside a class they are octal. Octal values
@@ -96,12 +100,10 @@ above `0o377` are rejected.
 Every unsupported construct fails at compile time with a positioned error. It
 is never silently reinterpreted with Rust `regex` semantics.
 
-- Flags `i`, `m`, `s`, `x`, and inline flags.
-- Lazy repetition.
+- The `x` flag.
 - `\N{...}`, `\p{...}`, brace hex such as `\x{41}`.
 - Rust assertions `\b{...}`, `\<`, `\>`.
 - Class set operators `&&`, `--`, `~~`, nested classes, POSIX classes.
-- Named capture groups.
 - Backreferences, lookaround, atomic groups, possessive quantifiers,
   conditionals, recursion.
 
@@ -127,15 +129,15 @@ code point.
 | Milestone | State |
 |---|---|
 | 1. UCS haystack, Python subset, group-0 PikeVM | implemented |
-| 2. Python classes, flags, captures | planned |
+| 2. Python classes, flags, captures | implemented except `x` |
 | 3. Prefilter and benchmark | implemented |
 | 4. Lazy DFA | implemented |
 | 5. PyO3 binding and end-to-end benchmark | implemented on CPython 3.13 GIL |
-| Continuous integration | not set up |
+| Continuous integration | implemented |
 
-Known gaps: match objects, flags,
-`$`, flags, lazy repetition, and verification on CPython versions other than
-3.13 and on free-threaded builds. See `spec/docs/milestones.md`.
+Known gaps: the `x` flag, `sub` and `split`, Python-level compatibility for
+every edge of the `re` API, and verification on free-threaded builds. See
+`spec/docs/milestones.md`.
 
 ## Performance
 

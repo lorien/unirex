@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use pyo3::Bound;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyString, PyTuple};
+use pyo3::types::{PyAny, PyDict, PyList, PyString, PyTuple};
 
 use crate::{Match as CoreMatch, Regex as CoreRegex, Scratch, Ucs};
 
@@ -90,6 +90,16 @@ impl PyRegex {
         self.inner.group_count()
     }
 
+    /// Mapping of capture name to group index, as in `re.Pattern.groupindex`.
+    #[getter]
+    fn groupindex<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let dict = PyDict::new(py);
+        for (name, index) in self.inner.capture_names() {
+            dict.set_item(name, index)?;
+        }
+        Ok(dict)
+    }
+
     /// Return all non-overlapping matches.
     ///
     /// With no capture groups this is a list of matched strings, matching
@@ -155,6 +165,26 @@ impl PyRegex {
         found
             .map(|m| substring(py, text, m.start(), m.end()).map(Bound::unbind))
             .transpose()
+    }
+
+    /// Iterate over matches, yielding [`PyMatch`] objects.
+    fn finditer(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<PyFindIter> {
+        let ucs = py_ucs(text)?;
+        let mut scratch = self.take_scratch();
+        let width = 2 * (self.inner.group_count() + 1);
+        let found = collect_spans_and_slots(&self.inner, &mut scratch, ucs, py, width);
+        self.put_scratch(scratch);
+        let matches = found.into_iter().map(|(_, _, slots)| slots).collect();
+        Ok(PyFindIter {
+            text: text.clone().unbind(),
+            matches,
+            position: 0,
+            names: self
+                .inner
+                .capture_names()
+                .map(|(name, index)| (name.to_string(), index))
+                .collect(),
+        })
     }
 
     /// Whether the pattern matches anywhere in `text`.
@@ -325,10 +355,163 @@ fn compile(pattern: &str) -> PyResult<PyRegex> {
     PyRegex::new(pattern)
 }
 
+/// A single match with its capture spans.
+#[pyclass(name = "Match", module = "unirex")]
+pub struct PyMatch {
+    text: Py<PyString>,
+    slots: Vec<usize>,
+    names: Vec<(String, usize)>,
+}
+
+fn resolve_index(names: &[(String, usize)], index: Option<&Bound<'_, PyAny>>) -> PyResult<usize> {
+    let Some(index) = index else {
+        return Ok(0);
+    };
+    if let Ok(number) = index.extract::<isize>() {
+        if number < 0 {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "no such group: negative index",
+            ));
+        }
+        return Ok(number as usize);
+    }
+    if let Ok(name) = index.extract::<String>() {
+        return names
+            .iter()
+            .find(|(existing, _)| *existing == name)
+            .map(|(_, index)| *index)
+            .ok_or_else(|| {
+                pyo3::exceptions::PyIndexError::new_err(format!("no such group: {name}"))
+            });
+    }
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "group index must be an int or a str",
+    ))
+}
+
+impl PyMatch {
+    fn span_of(&self, index: usize) -> Option<(usize, usize)> {
+        let lo = *self.slots.get(2 * index)?;
+        let hi = *self.slots.get(2 * index + 1)?;
+        if lo == usize::MAX || hi == usize::MAX {
+            None
+        } else {
+            Some((lo, hi))
+        }
+    }
+}
+
+#[pymethods]
+impl PyMatch {
+    #[pyo3(signature = (index = None))]
+    fn span(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<(isize, isize)> {
+        let index = resolve_index(&self.names, index)?;
+        // Python reports `(-1, -1)` for a group that did not participate.
+        Ok(match self.span_of(index) {
+            Some((start, end)) => (start as isize, end as isize),
+            None => (-1, -1),
+        })
+    }
+
+    #[pyo3(signature = (index = None))]
+    fn start(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<isize> {
+        let index = resolve_index(&self.names, index)?;
+        Ok(self.span_of(index).map_or(-1, |(start, _)| start as isize))
+    }
+
+    #[pyo3(signature = (index = None))]
+    fn end(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<isize> {
+        let index = resolve_index(&self.names, index)?;
+        Ok(self.span_of(index).map_or(-1, |(_, end)| end as isize))
+    }
+
+    #[pyo3(signature = (index = None))]
+    fn group(
+        &self,
+        py: Python<'_>,
+        index: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Option<Py<PyString>>> {
+        let index = resolve_index(&self.names, index)?;
+        let Some((start, end)) = self.span_of(index) else {
+            return Ok(None);
+        };
+        substring(py, self.text.bind(py), start, end).map(|s| Some(s.unbind()))
+    }
+
+    fn groups<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
+        let count = self.slots.len() / 2;
+        let mut items: Vec<Option<Py<PyString>>> = Vec::with_capacity(count.saturating_sub(1));
+        for index in 1..count {
+            let value = match self.span_of(index) {
+                Some((start, end)) => Some(substring(py, self.text.bind(py), start, end)?.unbind()),
+                None => None,
+            };
+            items.push(value);
+        }
+        Ok(PyTuple::new(py, items)?.unbind())
+    }
+
+    fn groupdict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let dict = PyDict::new(py);
+        for (name, index) in &self.names {
+            let value = match self.span_of(*index) {
+                Some((start, end)) => Some(substring(py, self.text.bind(py), start, end)?.unbind()),
+                None => None,
+            };
+            dict.set_item(name, value)?;
+        }
+        Ok(dict)
+    }
+
+    fn __repr__(&self) -> String {
+        match self.span_of(0) {
+            Some((start, end)) => format!("<unirex.Match span=({start}, {end})>"),
+            None => "<unirex.Match unmatched>".to_string(),
+        }
+    }
+}
+
+/// Iterator over matches produced by [`PyRegex::finditer`].
+///
+/// Spans and capture slots are collected up front, so iteration itself is
+/// cheap and does not hold the GIL beyond building each `Match`.
+#[pyclass(name = "FindIter", module = "unirex")]
+pub struct PyFindIter {
+    text: Py<PyString>,
+    matches: Vec<Vec<usize>>,
+    position: usize,
+    names: Vec<(String, usize)>,
+}
+
+#[pymethods]
+impl PyFindIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> Option<Py<PyMatch>> {
+        let slots = slf.matches.get(slf.position)?.clone();
+        slf.position += 1;
+        Some(
+            Py::new(
+                py,
+                PyMatch {
+                    text: slf.text.clone_ref(py),
+                    slots,
+                    names: slf.names.clone(),
+                },
+            )
+            .expect("Match construction cannot fail"),
+        )
+    }
+}
+
 #[pymodule]
 fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRegex>()?;
+    m.add_class::<PyMatch>()?;
+    m.add_class::<PyFindIter>()?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;
     Ok(())
 }

@@ -145,6 +145,24 @@ def main() -> int:
         print("DETACH GROUP MISMATCH")
         return 1
 
+    for pattern, text in [
+        (r"(\w+)@(\w+)\.(\w+)", "mail me@example.com and you@test.org"),
+        (r"(?P<user>[a-z]+)", "abc def"),
+        (r"(a)?(b)", "b"),
+        (r"(?i)([a-z]+)", "ABC xyz"),
+    ]:
+        ours = unirex.compile(pattern)
+        reference = re.compile(pattern)
+        got = [(m.span(), m.groups(), m.group(0), tuple(m.groupdict().items())) for m in ours.finditer(text)]
+        want = [(m.span(), m.groups(), m.group(0), tuple(m.groupdict().items())) for m in reference.finditer(text)]
+        if got != want:
+            print(f"FINDITER MISMATCH pattern={pattern!r} text={text!r} ours={got!r} re={want!r}")
+            return 1
+    indexed = unirex.compile(r"(?P<user>[a-z]+)")
+    if dict(indexed.groupindex) != {"user": 1}:
+        print("GROUPINDEX MISMATCH")
+        return 1
+
     print(f"python binding smoke test ok: {len(PATTERNS)} patterns")
     return 0
 

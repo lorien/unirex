@@ -60,6 +60,42 @@ def render(name: str, ranges: list[tuple[int, int]]) -> list[str]:
     return lines
 
 
+def fold_pairs() -> list[tuple[int, int]]:
+    """Code-point pairs that match each other under CPython `re.IGNORECASE`.
+
+    Candidates come from single-character lower/upper/title/casefold variants
+    plus the special pairs CPython resolves itself: `i`/`\u0130`, `i`/`\u0131`,
+    `s`/`\u017F`, `k`/`\u212A`, and `\u00DF`/`\u1E9E`. Every candidate is then
+    validated with `re.IGNORECASE`, so a wrong guess cannot reach the table.
+    """
+    specials = [
+        ("i", "\u0130"),
+        ("i", "\u0131"),
+        ("I", "\u0131"),
+        ("s", "\u017F"),
+        ("S", "\u017F"),
+        ("k", "\u212A"),
+        ("K", "\u212A"),
+        ("\u00DF", "\u1E9E"),
+    ]
+    candidates: set[tuple[int, int]] = set()
+    for cp in range(MAX):
+        ch = chr(cp)
+        for form in (ch.lower(), ch.upper(), ch.title(), ch.casefold()):
+            if len(form) == 1 and form != ch:
+                candidates.add((cp, ord(form)))
+    for left, right in specials:
+        candidates.add((ord(left), ord(right)))
+        candidates.add((ord(right), ord(left)))
+
+    kept = []
+    for a, b in sorted(candidates):
+        pattern = re.compile("^" + re.escape(chr(a)) + "$", re.IGNORECASE)
+        if pattern.match(chr(b)):
+            kept.append((a, b))
+    return kept
+
+
 def build() -> str:
     word = ranges_for(r"\w")
     digit = ranges_for(r"\d")
@@ -80,6 +116,8 @@ def build() -> str:
     lines.extend(render("DIGIT", digit))
     lines.append("")
     lines.extend(render("SPACE", space))
+    lines.append("")
+    lines.extend(render("FOLD", fold_pairs()))
     lines.append("")
     lines.append("/// Whether `code_point` is a `\\w` unit in CPython `re`.")
     lines.append("pub(crate) fn is_word(code_point: u32) -> bool {")

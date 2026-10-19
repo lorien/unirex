@@ -32,6 +32,8 @@ pub(crate) struct Program {
     /// The program contains an assertion the DFA cannot evaluate without
     /// surrounding context, so the DFA must decline it.
     pub(crate) uses_context: bool,
+    /// Capture names paired with their group index.
+    pub(crate) names: Vec<(String, usize)>,
 }
 
 /// A conservative set of code units that can begin a match.
@@ -120,6 +122,10 @@ pub(crate) enum AssertKind {
     End,
     /// End of the haystack, or just before a final newline (Python `$`).
     EndLine,
+    /// Start of the haystack or just after any newline (Python `^` with `m`).
+    StartLine,
+    /// End of the haystack or just before any newline (Python `$` with `m`).
+    EndAnyLine,
     /// Between a word and a non-word unit, or a word unit and the haystack
     /// edge.
     WordBoundary,
@@ -141,6 +147,8 @@ impl AssertKind {
             AssertKind::Start => pos == 0,
             AssertKind::End => pos == len,
             AssertKind::EndLine => pos == len || (pos + 1 == len && next == Some('\n' as u32)),
+            AssertKind::StartLine => pos == 0 || prev == Some('\n' as u32),
+            AssertKind::EndAnyLine => pos == len || next == Some('\n' as u32),
             AssertKind::WordBoundary => {
                 unicode_tables::is_word(prev.unwrap_or(0))
                     != unicode_tables::is_word(next.unwrap_or(0))
@@ -320,11 +328,21 @@ fn span_at(offset: usize) -> Span {
     )
 }
 
+/// Active inline flags during lowering.
+#[derive(Clone, Copy, Debug, Default)]
+struct Flags {
+    ignore_case: bool,
+    multiline: bool,
+    dot_all: bool,
+}
+
 struct Compiler {
+    flags: Flags,
     insts: Vec<Inst>,
     classes: Vec<Class>,
     total_class_ranges: usize,
     groups: usize,
+    names: Vec<(String, usize)>,
     /// Set when the program contains an assertion that depends on the
     /// surrounding units, which the lazy DFA cannot evaluate.
     uses_context: bool,
@@ -333,10 +351,12 @@ struct Compiler {
 impl Compiler {
     fn new() -> Compiler {
         Compiler {
+            flags: Flags::default(),
             insts: Vec::new(),
             classes: Vec::new(),
             total_class_ranges: 0,
             groups: 0,
+            names: Vec::new(),
             uses_context: false,
         }
     }
@@ -357,6 +377,7 @@ impl Compiler {
             first,
             groups: self.groups,
             uses_context: self.uses_context,
+            names: self.names,
         })
     }
 
@@ -391,6 +412,52 @@ impl Compiler {
         Ok(id)
     }
 
+    fn apply_flags(&mut self, items: &[ast::FlagsItem], span: &Span) -> Result<(), Error> {
+        let mut negate = false;
+        for item in items {
+            match &item.kind {
+                ast::FlagsItemKind::Negation => {
+                    negate = true;
+                    continue;
+                }
+                ast::FlagsItemKind::Flag(flag) => {
+                    let value = !negate;
+                    match flag {
+                        ast::Flag::CaseInsensitive => self.flags.ignore_case = value,
+                        ast::Flag::MultiLine => self.flags.multiline = value,
+                        ast::Flag::DotMatchesNewLine => self.flags.dot_all = value,
+                        ast::Flag::IgnoreWhitespace => {
+                            if value {
+                                return Err(unsupported("the x flag", &item.span));
+                            }
+                        }
+                        _ => return Err(unsupported("this flag", &item.span)),
+                    }
+                }
+            }
+        }
+        let _ = span;
+        Ok(())
+    }
+
+    /// Range set closed under case folding, using the generated fold table.
+    fn case_ranges(&self, ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+        let mut expanded = ranges.to_vec();
+        for &(left, right) in unicode_tables::FOLD {
+            if ranges_contain(ranges, left) {
+                expanded.push((right, right));
+            }
+        }
+        expanded
+    }
+
+    fn set_split_a(&mut self, pc: usize, target: usize) {
+        match &mut self.insts[pc] {
+            Inst::Split(a, _) => *a = target,
+            _ => unreachable!("expected Split instruction"),
+        }
+    }
+
     fn set_split_b(&mut self, pc: usize, target: usize) {
         match &mut self.insts[pc] {
             Inst::Split(_, b) => *b = target,
@@ -401,20 +468,50 @@ impl Compiler {
     fn compile(&mut self, ast: &Ast) -> Result<(), Error> {
         match ast {
             Ast::Empty(_) => Ok(()),
-            Ast::Flags(flags) => Err(unsupported("inline flags", &flags.span)),
+            Ast::Flags(flags) => {
+                if !self.insts.is_empty() {
+                    return Err(unsupported(
+                        "global flags outside the start of the pattern",
+                        &flags.span,
+                    ));
+                }
+                self.apply_flags(&flags.flags.items, &flags.span)?;
+                Ok(())
+            }
             Ast::Literal(lit) => {
                 check_literal(lit)?;
-                self.push(Inst::Char(lit.c as u32), &lit.span)?;
+                let code_point = lit.c as u32;
+                if self.flags.ignore_case {
+                    let class = Class::new(self.case_ranges(&[(code_point, code_point)]), false);
+                    let id = self.add_class(class, &lit.span)?;
+                    self.push(Inst::Class(id), &lit.span)?;
+                } else {
+                    self.push(Inst::Char(code_point), &lit.span)?;
+                }
                 Ok(())
             }
             Ast::Dot(span) => {
-                let id = self.add_class(Class::dot(), span)?;
+                let class = if self.flags.dot_all {
+                    Class::new(vec![(0, MAX_CODEPOINT)], false)
+                } else {
+                    Class::dot()
+                };
+                let id = self.add_class(class, span)?;
                 self.push(Inst::Class(id), span)?;
                 Ok(())
             }
             Ast::Assertion(assertion) => match &assertion.kind {
-                AssertionKind::StartLine | AssertionKind::StartText => {
+                AssertionKind::StartText => {
                     self.push(Inst::Assert(AssertKind::Start), &assertion.span)?;
+                    Ok(())
+                }
+                AssertionKind::StartLine => {
+                    if self.flags.multiline {
+                        self.uses_context = true;
+                        self.push(Inst::Assert(AssertKind::StartLine), &assertion.span)?;
+                    } else {
+                        self.push(Inst::Assert(AssertKind::Start), &assertion.span)?;
+                    }
                     Ok(())
                 }
                 AssertionKind::EndText => {
@@ -423,7 +520,12 @@ impl Compiler {
                 }
                 AssertionKind::EndLine => {
                     self.uses_context = true;
-                    self.push(Inst::Assert(AssertKind::EndLine), &assertion.span)?;
+                    let kind = if self.flags.multiline {
+                        AssertKind::EndAnyLine
+                    } else {
+                        AssertKind::EndLine
+                    };
+                    self.push(Inst::Assert(kind), &assertion.span)?;
                     Ok(())
                 }
                 AssertionKind::WordBoundary => {
@@ -445,13 +547,23 @@ impl Compiler {
                     ast::ClassPerlKind::Digit => unicode_tables::DIGIT.to_vec(),
                     ast::ClassPerlKind::Space => unicode_tables::SPACE.to_vec(),
                 };
-                let lowered = Class::new(ranges, class.negated);
+                let mut lowered = Class::new(ranges, class.negated);
+                if self.flags.ignore_case {
+                    let negated = lowered.negated;
+                    lowered = Class::new(self.case_ranges(lowered.ranges()), negated);
+                }
                 let id = self.add_class(lowered, &class.span)?;
                 self.push(Inst::Class(id), &class.span)?;
                 Ok(())
             }
             Ast::ClassBracketed(class) => {
-                let lowered = self.lower_bracketed(class)?;
+                let mut lowered = self.lower_bracketed(class)?;
+                if self.flags.ignore_case {
+                    // Fold the members and keep the negation, so `[^a-c]`
+                    // under `i` still excludes `A`, `B`, and `C`.
+                    let negated = lowered.negated;
+                    lowered = Class::new(self.case_ranges(lowered.ranges()), negated);
+                }
                 let id = self.add_class(lowered, &class.span)?;
                 self.push(Inst::Class(id), &class.span)?;
                 Ok(())
@@ -487,37 +599,67 @@ impl Compiler {
                 Ok(())
             }
             GroupKind::NonCapturing(flags) => {
-                if !flags.items.is_empty() {
-                    return Err(unsupported("inline flags", &group.span));
+                if flags.items.is_empty() {
+                    return self.compile(&group.ast);
                 }
-                self.compile(&group.ast)
+                let saved = self.flags;
+                self.apply_flags(&flags.items, &group.span)?;
+                let result = self.compile(&group.ast);
+                self.flags = saved;
+                result
             }
-            GroupKind::CaptureName { .. } => Err(unsupported("named capture groups", &group.span)),
+            GroupKind::CaptureName {
+                name,
+                starts_with_p,
+            } => {
+                if !starts_with_p {
+                    // `(?<name>...)` is Rust syntax; Python spells it `(?P<name>...)`.
+                    return Err(unsupported("angle-bracket group syntax", &group.span));
+                }
+                let index = name.index as usize;
+                if index > MAX_GROUPS {
+                    return Err(Error::TooLarge {
+                        what: "capture group count",
+                        offset: group.span.start.offset,
+                    });
+                }
+                let text = name.name.as_str();
+                if !is_python_identifier(text) {
+                    return Err(unsupported("this capture group name", &group.span));
+                }
+                if self.names.iter().any(|(existing, _)| existing == text) {
+                    return Err(unsupported("duplicate capture group name", &group.span));
+                }
+                self.names.push((text.to_string(), index));
+                self.groups = self.groups.max(index);
+                self.push(Inst::Save(2 * index), &group.span)?;
+                self.compile(&group.ast)?;
+                self.push(Inst::Save(2 * index + 1), &group.span)?;
+                Ok(())
+            }
         }
     }
 
     fn compile_repetition(&mut self, repetition: &ast::Repetition) -> Result<(), Error> {
-        if !repetition.greedy {
-            return Err(unsupported("lazy repetition", &repetition.op.span));
-        }
         if matches!(repetition.ast.as_ref(), Ast::Assertion(_)) {
             return Err(unsupported(
                 "repetition of an assertion",
                 &repetition.op.span,
             ));
         }
+        let greedy = repetition.greedy;
         match &repetition.op.kind {
             RepetitionKind::ZeroOrOne => {
-                self.compile_zero_or_one(&repetition.ast, &repetition.span)
+                self.compile_zero_or_one(&repetition.ast, &repetition.span, greedy)
             }
             RepetitionKind::ZeroOrMore => {
-                self.compile_zero_or_more(&repetition.ast, &repetition.span)
+                self.compile_zero_or_more(&repetition.ast, &repetition.span, greedy)
             }
             RepetitionKind::OneOrMore => {
-                self.compile_one_or_more(&repetition.ast, &repetition.span)
+                self.compile_one_or_more(&repetition.ast, &repetition.span, greedy)
             }
             RepetitionKind::Range(range) => {
-                self.compile_range(range, &repetition.ast, &repetition.op.span)
+                self.compile_range(range, &repetition.ast, &repetition.op.span, greedy)
             }
         }
     }
@@ -527,6 +669,7 @@ impl Compiler {
         range: &RepetitionRange,
         ast: &Ast,
         span: &Span,
+        greedy: bool,
     ) -> Result<(), Error> {
         match range {
             RepetitionRange::Exactly(n) => {
@@ -541,7 +684,7 @@ impl Compiler {
                 for _ in 0..*n {
                     self.compile(ast)?;
                 }
-                self.compile_zero_or_more(ast, span)
+                self.compile_zero_or_more(ast, span, greedy)
             }
             RepetitionRange::Bounded(start, end) => {
                 if start > end {
@@ -552,7 +695,7 @@ impl Compiler {
                     self.compile(ast)?;
                 }
                 for _ in *start..*end {
-                    self.compile_zero_or_one(ast, span)?;
+                    self.compile_zero_or_one(ast, span, greedy)?;
                 }
                 Ok(())
             }
@@ -570,29 +713,60 @@ impl Compiler {
         }
     }
 
-    fn compile_zero_or_one(&mut self, ast: &Ast, span: &Span) -> Result<(), Error> {
-        let split = self.push(Inst::Split(self.insts.len() + 1, 0), span)?;
+    fn compile_zero_or_one(&mut self, ast: &Ast, span: &Span, greedy: bool) -> Result<(), Error> {
+        let skip = if greedy {
+            Inst::Split(self.insts.len() + 1, 0)
+        } else {
+            Inst::Split(0, self.insts.len() + 1)
+        };
+        let split = self.push(skip, span)?;
         self.compile(ast)?;
         let end = self.insts.len();
-        self.set_split_b(split, end);
+        if greedy {
+            self.set_split_b(split, end);
+        } else {
+            self.set_split_a(split, end);
+        }
         Ok(())
     }
 
-    fn compile_zero_or_more(&mut self, ast: &Ast, span: &Span) -> Result<(), Error> {
-        let split = self.push(Inst::Split(self.insts.len() + 1, 0), span)?;
+    fn compile_zero_or_more(&mut self, ast: &Ast, span: &Span, greedy: bool) -> Result<(), Error> {
+        let split = self.push(
+            if greedy {
+                Inst::Split(self.insts.len() + 1, 0)
+            } else {
+                Inst::Split(0, self.insts.len() + 1)
+            },
+            span,
+        )?;
         self.compile(ast)?;
         self.push(Inst::Jump(split), span)?;
         let end = self.insts.len();
-        self.set_split_b(split, end);
+        if greedy {
+            self.set_split_b(split, end);
+        } else {
+            self.set_split_a(split, end);
+        }
         Ok(())
     }
 
-    fn compile_one_or_more(&mut self, ast: &Ast, span: &Span) -> Result<(), Error> {
+    fn compile_one_or_more(&mut self, ast: &Ast, span: &Span, greedy: bool) -> Result<(), Error> {
         let body_start = self.insts.len();
         self.compile(ast)?;
-        let split = self.push(Inst::Split(body_start, 0), span)?;
+        let split = self.push(
+            if greedy {
+                Inst::Split(body_start, 0)
+            } else {
+                Inst::Split(0, body_start)
+            },
+            span,
+        )?;
         let end = self.insts.len();
-        self.set_split_b(split, end);
+        if greedy {
+            self.set_split_b(split, end);
+        } else {
+            self.set_split_a(split, end);
+        }
         Ok(())
     }
 
@@ -698,6 +872,23 @@ impl Compiler {
             }
         }
     }
+}
+
+/// Whether `name` is a valid Python capture-group name.
+fn is_python_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+/// Whether a sorted range list contains `code_point`.
+fn ranges_contain(ranges: &[(u32, u32)], code_point: u32) -> bool {
+    ranges
+        .iter()
+        .any(|&(lo, hi)| code_point >= lo && code_point <= hi)
 }
 
 /// Complement of a sorted range list over the whole code-point space.

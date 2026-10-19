@@ -136,6 +136,45 @@ fn python_classes_boundaries_and_end_anchor() {
     }
 }
 
+/// Spans produced by CPython `re` for the same patterns and haystacks.
+#[test]
+fn python_flags_lazy_repetition_and_named_groups() {
+    type Case = (&'static str, &'static str, &'static [(usize, usize)]);
+    let cases: &[Case] = &[
+        (r"(?i)abc", "ABC abc", &[(0, 3), (4, 7)]),
+        (r"(?i)[^a-c]+", "ABCxyz", &[(3, 6)]),
+        (r"(?m)^foo", "x\nfoo", &[(2, 5)]),
+        (r"(?m)foo$", "foo\nfoo", &[(0, 3), (4, 7)]),
+        (r"(?s)a.b", "a\nb", &[(0, 3)]),
+        (r"(?i:a)b", "Ab", &[(0, 2)]),
+        (r"(?i:a)b", "AB", &[]),
+        (
+            r"(?P<user>[a-z]+)@(?P<host>[a-z.]+)",
+            "me@example.com",
+            &[(0, 14)],
+        ),
+    ];
+    for (pattern, hay, expected) in cases {
+        assert_eq!(
+            &iter1(pattern, hay)[..],
+            *expected,
+            "pattern {pattern:?} haystack {hay:?}"
+        );
+    }
+
+    // Lazy repetition changes group spans, not the whole match.
+    let re = Regex::new(r"(a+?)(a+)").unwrap();
+    let units: Vec<u8> = b"aaa".to_vec();
+    let found = re.find(Ucs::Ucs1(&units)).unwrap();
+    let mut slots = vec![usize::MAX; 2 * (re.group_count() + 1)];
+    let mut scratch = re.scratch();
+    assert!(re.captures(&mut scratch, Ucs::Ucs1(&units), found, &mut slots));
+    assert_eq!(&slots[2..], &[0, 1, 1, 3]);
+
+    let named = Regex::new(r"(?P<user>[a-z]+)").unwrap();
+    assert_eq!(named.capture_names().collect::<Vec<_>>(), vec![("user", 1)]);
+}
+
 #[test]
 fn python_classes_work_on_wide_haystacks() {
     let digits = Regex::new(r"\d+").unwrap();
@@ -166,14 +205,8 @@ fn python_classes_work_on_wide_haystacks() {
 #[test]
 fn rejects_rust_dialect_and_unimplemented_python() {
     for pattern in [
-        "(?i)a",
-        "(?m)a",
-        "(?s)a",
         "(?x)a",
-        "(?i:a)",
-        "a*?",
-        "a+?",
-        "a??",
+        "(?i)(?x)a",
         "[a&&b]",
         "[a--b]",
         "[a~~b]",
@@ -182,7 +215,6 @@ fn rejects_rust_dialect_and_unimplemented_python() {
         r"\p{L}",
         r"\P{L}",
         r"\x{41}",
-        "(?P<x>a)",
         "(?<x>a)",
         r"\b{start}",
         r"\<",
@@ -204,7 +236,7 @@ fn rejects_rust_dialect_and_unimplemented_python() {
         assert_rejected(pattern);
     }
 
-    for pattern in ["(?i)a", "a*?", "[a&&b]", r"\p{L}", "(?P<n>a)"] {
+    for pattern in ["(?x)a", "(?i)(?x)a", "[a&&b]", r"\p{L}"] {
         assert_unsupported(pattern);
     }
 }
