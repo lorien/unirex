@@ -433,15 +433,41 @@ def build_blocks(
         raw_dir = results_dir
 
     blocks = [
-        ("h1", "Telegram @mention extraction: unirex vs `re`"),
+        ("h1", "Telegram @mention extraction: unirex vs CPython `re` and Rust `regex`"),
         (
             "p",
             "Real-world task, measured as one `findall(text)` pass over every "
-            "post in the corpus. `unirex` matches CPython's UCS-1, UCS-2, or "
-            "UCS-4 buffer directly; there is no UTF-8 conversion in the matching "
-            "path. This page compares the UCS-native binding with CPython `re` "
-            "on the same parsed strings, and separately records the engine-only "
-            "Rust comparison.",
+            "post in the corpus. The extension matches CPython's UCS-1, UCS-2, "
+            "or UCS-4 buffer directly; there is no UTF-8 conversion in the "
+            "matching path. This page reports two separate measurements, built on "
+            "the same pattern and the same corpus: the PyO3 extension called from "
+            "Python, compared with CPython `re`, and the Rust crate called "
+            "directly, compared with the `regex` crate. They are not "
+            "interchangeable and their numbers are not comparable.",
+        ),
+        ("h2", "Two measurements, two processes"),
+        (
+            "table",
+            ["Measurement", "Process", "What is called", "Included in the time"],
+            [
+                [
+                    "End-to-end (first result table)",
+                    f"CPython {env['python']} with the GIL",
+                    "the PyO3 extension: `import unirex`, `rx.findall(text)`, "
+                    "against CPython `re`",
+                    "the scan, Python call overhead, list and result-string "
+                    "construction",
+                ],
+                [
+                    "Engine-only (second result table)",
+                    "a Rust process, `examples/bench.rs`",
+                    "the Rust crate through its `Ucs` API, against the `regex` "
+                    "crate",
+                    "only the scan, with a reused `Scratch`; no Python is "
+                    "involved",
+                ],
+            ],
+            "left",
         ),
         ("h2", "Methodology"),
         (
@@ -460,17 +486,19 @@ def build_blocks(
                 f"packed as CPython UCS storage: {stats['ucs1_posts']:,} UCS-1, "
                 f"{stats['ucs2_posts']:,} UCS-2, and {stats['ucs4_posts']:,} UCS-4 "
                 f"posts. The engine scans these units directly.",
-                "**End-to-end protocol**: each engine and thread point runs in a "
-                "fresh process. The process loads the corpus, compiles the pattern "
-                "once, runs untimed warm-up passes over the corpus, and then "
-                "performs one timed `findall` per post over its slice. Workers are "
-                "pinned to distinct CPUs and released by a barrier. The reported "
-                "wall time is the maximum across workers.",
-                "**Engine-only protocol**: each post is scanned exactly once per "
-                "run with a reused `Scratch`. `ucs` uses the three CPython storage "
-                "kinds, `bytes` uses Rust `regex::bytes` over UTF-8, and `str` uses "
-                "Rust `regex` over UTF-8. An independent naive counter runs during "
-                "loading and every mode must match it.",
+                "**End-to-end protocol (PyO3 extension in a Python process)**: "
+                "each engine and thread point runs in a fresh Python process. The "
+                "process loads the corpus, compiles the pattern once, runs untimed "
+                "warm-up passes over the corpus, and then performs one timed "
+                "`findall` per post over its slice. Workers are pinned to distinct "
+                "CPUs and released by a barrier. The reported wall time is the "
+                "maximum across workers.",
+                "**Engine-only protocol (Rust crate, no Python)**: each post is "
+                "scanned exactly once per run with a reused `Scratch`, called "
+                "directly from `examples/bench.rs`. `ucs` uses the three CPython "
+                "storage kinds, `bytes` uses Rust `regex::bytes` over UTF-8, and "
+                "`str` uses Rust `regex` over UTF-8. An independent naive counter "
+                "runs during loading and every mode must match it.",
                 "**Core lease and contamination guard**: the whole matrix holds "
                 "`/tmp/core4.lock`. Each point records CPU time, wall time, load, "
                 "and per-CPU frequency. Runs below the efficiency floor or above "
@@ -490,16 +518,22 @@ def build_blocks(
                 f"measured on this page.",
             ],
         ),
-        ("h2", "End-to-end Python under the GIL"),
+        ("h2", "End-to-end: PyO3 extension called from Python"),
+        (
+            "p",
+            "Both columns below are Python: the process imports the extension as "
+            "`unirex` and calls `rx.findall(text)` per post, and the baseline is "
+            "CPython's own `re` module. No Rust baseline appears in this table.",
+        ),
         ("image", "End-to-end Python wall time by worker count", "img/telegram_end_to_end.svg"),
         (
             "table",
             [
                 "Workers",
-                "unirex median (s)",
-                "unirex min (s)",
-                "re median (s)",
-                "re min (s)",
+                "unirex (PyO3) median (s)",
+                "unirex (PyO3) min (s)",
+                "CPython re median (s)",
+                "CPython re min (s)",
                 "unirex/re",
             ],
             py_rows,
@@ -520,15 +554,22 @@ def build_blocks(
             "construction is serialized. The one-thread result is the meaningful "
             "end-to-end comparison on this page.",
         ),
-        ("h2", "Engine-only comparison"),
+        ("h2", "Engine-only: Rust crate, no Python"),
+        (
+            "p",
+            "Nothing in this table runs Python. `examples/bench.rs` calls the "
+            "Rust crate directly through its `Ucs` haystack API and compares it "
+            "with the `regex` crate over UTF-8. The PyO3 extension is not "
+            "involved and these numbers exclude Python call overhead.",
+        ),
         ("image", "Engine-only wall time by worker count", "img/telegram_engine_only.svg"),
         (
             "table",
             [
                 "Workers",
-                "unirex UCS (s)",
-                "Rust regex bytes (s)",
-                "Rust regex str (s)",
+                "unirex crate, UCS (s)",
+                "regex crate, bytes (s)",
+                "regex crate, str (s)",
                 "UCS/bytes",
             ],
             eng_rows,
@@ -552,6 +593,12 @@ def build_blocks(
             f"the one-thread end-to-end result.",
         ),
         ("h2", "Reading the numbers"),
+        (
+            "p",
+            "In the end-to-end table `unirex` is the PyO3 extension; in the "
+            "engine-only table it is the Rust crate. Whenever a row is ambiguous, "
+            "the interface named in its header decides what was measured.",
+        ),
         (
             "p",
             "Parity here means the one-thread end-to-end Telegram result, not "
@@ -620,8 +667,10 @@ def render_markdown(blocks: list) -> str:
             lines.append("")
         elif kind == "table":
             headers, rows = block[1], block[2]
+            align = block[3] if len(block) > 3 else "right"
+            rule = "---:" if align == "right" else "---"
             lines.append("| " + " | ".join(headers) + " |")
-            lines.append("|" + "|".join("---:" for _ in headers) + "|")
+            lines.append("|" + "|".join(rule for _ in headers) + "|")
             for row in rows:
                 cells = [cell.replace("|", "\\|") for cell in row]
                 lines.append("| " + " | ".join(cells) + " |")
@@ -747,7 +796,7 @@ def generate(results_dir: Path, out_dir: Path, write_html: bool = True) -> None:
     py_xs = list(THREADS)
     py_series = [
         (
-            "unirex",
+            "unirex (PyO3)",
             COLOR_EXP,
             None,
             [float(python[("unirex", t)]["median_s"]) for t in py_xs],
@@ -760,19 +809,19 @@ def generate(results_dir: Path, out_dir: Path, write_html: bool = True) -> None:
         ),
     ]
     eng_series = [
-        ("unirex UCS", COLOR_EXP, None, [float(engine[("ucs", t)]["median_s"]) for t in py_xs]),
-        ("Rust regex bytes", COLOR_RE, "7 4", [float(engine[("bytes", t)]["median_s"]) for t in py_xs]),
-        ("Rust regex str", COLOR_STR, "2 4", [float(engine[("str", t)]["median_s"]) for t in py_xs]),
+        ("unirex crate (UCS)", COLOR_EXP, None, [float(engine[("ucs", t)]["median_s"]) for t in py_xs]),
+        ("regex crate bytes", COLOR_RE, "7 4", [float(engine[("bytes", t)]["median_s"]) for t in py_xs]),
+        ("regex crate str", COLOR_STR, "2 4", [float(engine[("str", t)]["median_s"]) for t in py_xs]),
     ]
     line_chart_svg(
         img_dir / "telegram_end_to_end.svg",
-        "Telegram @mentions: end-to-end Python (GIL)",
+        "Telegram @mentions: end-to-end Python (PyO3 binding)",
         py_xs,
         py_series,
     )
     line_chart_svg(
         img_dir / "telegram_engine_only.svg",
-        "Telegram @mentions: engine only",
+        "Telegram @mentions: engine only (Rust crate)",
         py_xs,
         eng_series,
     )

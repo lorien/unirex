@@ -135,9 +135,10 @@ Known gaps: capture values, Python `\w`/`\d`/`\s`, Python word boundaries,
 ## Performance
 
 Telegram corpus, 1,000,000 posts, remote `regexus` (Intel i5-13500, first four
-physical P-cores `0,2,4,6`, SMT siblings idle), engine-only medians:
+physical P-cores `0,2,4,6`, SMT siblings idle). Engine-only medians, measured by
+`examples/bench.rs` calling the Rust crate directly, with no Python involved:
 
-| Threads | unirex (UCS) | Rust `regex` bytes |
+| Threads | unirex crate, UCS | Rust `regex` crate, bytes |
 |---|---|---|
 | 1 | 0.0690 s | 0.0712 s |
 | 4 | 0.0258 s | 0.0209 s |
@@ -145,9 +146,12 @@ physical P-cores `0,2,4,6`, SMT siblings idle), engine-only medians:
 UCS is about 3.1 percent faster at one thread and 1.24x slower at four; it
 scales 2.67x from one to four P-cores while bytes scales 3.41x.
 
-End-to-end Python with the GIL, full corpus, one thread: `unirex` median
-0.1851 s and minimum 0.1830 s, against CPython `re` median 0.1923 s and minimum
-0.1899 s. GIL threads 2-4 do not scale meaningfully.
+End-to-end Python with the GIL, full corpus, one thread: the `unirex` PyO3
+extension (installed wheel, `rx.findall(text)` per post) takes 0.1851 s median
+and 0.1830 s minimum, against CPython `re` at 0.1923 s median and 0.1899 s
+minimum. GIL threads 2-4 do not scale meaningfully. These end-to-end rows are
+the extension called from Python, not the Rust crate, so they are not
+comparable with the engine-only table above.
 
 The full matrix, charts, and methodology are in
 [`docs/telegram-benchmark.md`](docs/telegram-benchmark.md).

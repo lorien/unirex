@@ -99,7 +99,8 @@ Governor stayed `powersave`, turbo enabled. Engine frequency was 4.7 GHz to
 4.8 GHz. Load was 0.35 to 1.27 from other work, but per-worker efficiency
 stayed at 1.00. `/tmp/core4.lock` was held for the whole matrix.
 
-Engine-only medians, full corpus:
+Engine-only medians, full corpus, measured by `examples/bench.rs` calling the
+Rust crate directly with no Python involved:
 
 - 1 thread: UCS 0.0690 s, Rust `regex` bytes 0.0712 s, str 0.0711 s.
 - 2 threads: UCS 0.0386 s, bytes 0.0377 s, str 0.0378 s.
@@ -112,7 +113,8 @@ four. The one-thread result is the parity target; four-thread UCS scaling is
 limited by each worker scanning wider UCS storage and keeping its own DFA
 cache.
 
-End-to-end Python, same CPU lists, GIL:
+End-to-end Python, same CPU lists, GIL, measured by `tools/bench_python.py`
+importing the installed PyO3 extension into a Python process:
 
 - 1 thread: `unirex` 0.1851 s median, 0.1830 s minimum; CPython `re`
   0.1923 s median, 0.1899 s minimum.
@@ -122,6 +124,12 @@ End-to-end Python, same CPU lists, GIL:
   median, 0.1670 s minimum.
 - 4 threads: `unirex` 0.1801 s median, 0.1617 s minimum; `re` 0.1829 s
   median, 0.1775 s minimum.
+
+Naming rule for result tables: never write a bare `unirex` in a column header
+or chart legend. Name the interface, `unirex (PyO3)` for the extension called
+from Python or `unirex crate` for the Rust API, and name the baselines the same
+way (`CPython re`, `regex crate bytes`). The two measurements use the same
+pattern and corpus but their numbers are not comparable.
 
 The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
 is the end-to-end target. `unirex` is 3.8 percent faster than CPython `re`
