@@ -37,9 +37,11 @@
 
 ### Future-task notes
 
-- [open] Reserve `unirex` on crates.io. It needs an account token on the
+- [acted] Reserve `unirex` on crates.io. It needs an account token on the
   development machine; publish a minimal `0.0.1` crate from
   `packaging/` below the real `0.1.0`.
+  Resolved: `unirex 0.0.1` is published from `packaging/crates-stub/`; the
+  account also needed a verified email address, which was missing at first.
 - [open] Yank `unirex 0.0.1` on PyPI after the first functional release ships.
   It is lower than `0.1.0`, so resolvers already prefer the real release, but
   yanking keeps the project page from advertising an empty package.

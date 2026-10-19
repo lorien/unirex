@@ -1,15 +1,16 @@
 # Publishing
 
 Registry presence and release procedure for the `unirex` distribution and
-crate. The Python distribution is `unirex` on PyPI; the Rust crate will be
+crate. The Python distribution is `unirex` on PyPI; the Rust crate is
 `unirex` on crates.io.
 
 ## Current state
 
 - PyPI: name reserved by `unirex 0.0.1`, a metadata-only placeholder that
   installs no modules. Uploaded 2026-10-19.
-- crates.io: name not reserved yet. Publishing needs an account token that is
-  not present on the development machine.
+- crates.io: name reserved by `unirex 0.0.1`, an empty placeholder crate that
+  exposes no items. Published 2026-10-19.
+- Both placeholders sit below the first functional release, `0.1.0` or later.
 
 ## Toolchain
 
@@ -54,6 +55,33 @@ A release wheel was verified this way on CPython 3.13: it installs into a clean
 virtual environment and answers `findall` correctly. Upload a real release with
 `maturin publish` or by passing the built wheels to `twine upload`.
 
+## Placeholder crate
+
+The crate placeholder lives in `packaging/crates-stub/`. It declares
+`unirex 0.0.1`, edition 2021 (so it does not demand Rust 1.85), no
+dependencies, and no items in `src/lib.rs`. It must never gain a dependency or
+an API: dependents would inherit both.
+
+Commit the sources before publishing. `cargo publish` refuses a dirty tree and
+`--allow-dirty` hides that the published archive then omits version-control
+information:
+
+    git commit -am "..."
+    cd packaging/crates-stub
+    cargo package --list
+    cargo publish --dry-run
+    cargo publish
+
+The dry run needs no token and no upload, so it validates packaging and
+verification before the irreversible step. Check the name is still free
+immediately beforehand:
+
+    curl -s -H 'User-Agent: unirex-check' https://crates.io/api/v1/crates/unirex
+
+After the first functional release, yank the placeholder:
+
+    cargo yank --version 0.0.1
+
 ## Version policy
 
 - A placeholder must always be lower than the first real release. `0.0.1` is
@@ -66,11 +94,18 @@ virtual environment and answers `findall` correctly. Upload a real release with
 
 ## Credentials
 
-- Tokens live in `~/.pypirc` and in the crates.io credentials file, never in
-  the repository and never in a command line that a report records.
+- Tokens live in `~/.pypirc` and in `~/.cargo/credentials.toml`, never in the
+  repository and never in a command line that a report records.
 - A PyPI upload of a **new** project needs an account-scoped token. A
   project-scoped token can only publish later versions of a project it already
   owns.
+- crates.io rejects every publish, including a first one, until the account
+  email address is verified. The rejection is `400 Bad Request` with a
+  verification message and arrives after authentication, so it is an account
+  state problem, not a token problem.
+- crates.io has no API endpoint to validate a token ahead of time;
+  `GET /api/v1/me` is web-only and answers 403 for any token. The first real
+  signal is `cargo publish --dry-run` followed by the upload itself.
 - `.env` stays gitignored. No token, hash, or machine-specific path is
   committed.
 
@@ -83,3 +118,6 @@ virtual environment and answers `findall` correctly. Upload a real release with
    imports would shadow the future extension.
 3. For the crate, `cargo info unirex@<version>` must show the published
    manifest and `cargo add unirex` must resolve to the same version.
+4. `https://docs.rs/unirex` builds automatically after a publish. It is not
+   available immediately; check it a few minutes later rather than treating an
+   early 404 as a failure.

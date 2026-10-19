@@ -52,9 +52,11 @@
   ever re-hosted under a `unirex` release, update the URL, the pinned
   SHA-256 in both runners, `spec/docs/benchmarks.md`, and
   `spec/docs/adr/0009-benchmark-protocol.md` together.
-- [open] The registry stub publish is half done: PyPI now owns `unirex`
+- [acted] The registry stub publish is half done: PyPI now owns `unirex`
   through the `0.0.1` placeholder. The crates.io side is still pending because
   no account token exists on the development machine.
+  Resolved: crates.io also owns `unirex` through the `0.0.1` placeholder, so
+  both registries are reserved below the real `0.1.0`.
 
 ### Tooling/process
 
