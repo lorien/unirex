@@ -1,0 +1,14 @@
+[package]
+name = "unirex"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+description = "Name reserved for the unirex UCS-native regex engine. No code is published yet."
+documentation = "https://docs.rs/unirex"
+readme = "README.md"
+keywords = ["regex", "ucs", "linear-time"]
+categories = ["text-processing"]
+
+# Placeholder release. The functional crate is published from the repository
+# root at 0.1.0 or later; this manifest exists only to reserve the name and
+# must never gain dependencies.

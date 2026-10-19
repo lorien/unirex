@@ -17,4 +17,5 @@ __pycache__/
 
 # Packaging build output
 /packaging/*/build/
+/packaging/*/target/
 /packaging/*/*.egg-info/
