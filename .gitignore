@@ -14,3 +14,7 @@ __pycache__/
 # Rust / general build output
 /target/
 /build/
+
+# Packaging build output
+/packaging/*/build/
+/packaging/*/*.egg-info/

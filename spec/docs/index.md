@@ -17,7 +17,9 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
 7. [benchmarks.md](benchmarks.md) — corpus provenance, metrics, baselines, and
    success criteria.
 8. [dev.md](dev.md) — prerequisites, dependencies, and the local build loop.
-9. [plan.md](plan.md) — the open-task list.
+9. [publishing.md](publishing.md) — registry placeholders, version policy,
+   credentials, and publish verification.
+10. [plan.md](plan.md) — the open-task list.
 
 ## Decision records
 
