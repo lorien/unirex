@@ -457,7 +457,7 @@ def build_blocks(
                     "construction",
                 ],
                 [
-                    "Unirex crate vs Rust regex",
+                    "unirex crate vs regex crate",
                     "a Rust process, `examples/bench.rs`",
                     "the `regex` crate over UTF-8",
                     "only the scan, with a reused `Scratch`; no Python is "
@@ -552,7 +552,7 @@ def build_blocks(
             "construction is serialized. The one-thread result is the meaningful "
             "comparison on this page.",
         ),
-        ("h2", "Unirex crate vs Rust regex"),
+        ("h2", "unirex crate vs regex crate"),
         (
             "p",
             "Nothing in this table runs Python. `examples/bench.rs` calls the "
@@ -560,7 +560,7 @@ def build_blocks(
             "with the `regex` crate over UTF-8. The python binding is not "
             "involved and these numbers exclude Python call overhead.",
         ),
-        ("image", "Unirex crate vs Rust regex", "img/telegram_engine_only.svg"),
+        ("image", "unirex crate vs regex crate", "img/telegram_engine_only.svg"),
         (
             "table",
             [
@@ -820,7 +820,7 @@ def generate(results_dir: Path, out_dir: Path, write_html: bool = True) -> None:
     )
     line_chart_svg(
         img_dir / "telegram_engine_only.svg",
-        "Unirex crate vs Rust regex",
+        "unirex crate vs regex crate",
         py_xs,
         eng_series,
     )

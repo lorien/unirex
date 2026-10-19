@@ -7,7 +7,7 @@ Real-world task, measured as one `findall(text)` pass over every post in the cor
 | Measurement | Runs in | Compared with | What the time includes |
 |---|---|---|---|
 | Unirex python binding vs stdlib re | CPython 3.13.5 with the GIL | the `re` module, on the same strings | the scan, Python call overhead, list and result-string construction |
-| Unirex crate vs Rust regex | a Rust process, `examples/bench.rs` | the `regex` crate over UTF-8 | only the scan, with a reused `Scratch`; no Python is involved |
+| unirex crate vs regex crate | a Rust process, `examples/bench.rs` | the `regex` crate over UTF-8 | only the scan, with a reused `Scratch`; no Python is involved |
 
 ## Methodology
 
@@ -38,11 +38,11 @@ A ratio below 1 means the binding is faster. At one thread, `unirex` is 0.1851 s
 
 The GIL prevents meaningful scaling beyond one thread. The two- to four-worker medians stay close to the one-thread time, and the minimums are noisy because each scan is short and Python result construction is serialized. The one-thread result is the meaningful comparison on this page.
 
-## Unirex crate vs Rust regex
+## unirex crate vs regex crate
 
 Nothing in this table runs Python. `examples/bench.rs` calls the Rust crate directly through its `Ucs` haystack API and compares it with the `regex` crate over UTF-8. The python binding is not involved and these numbers exclude Python call overhead.
 
-![Unirex crate vs Rust regex](img/telegram_engine_only.svg)
+![unirex crate vs regex crate](img/telegram_engine_only.svg)
 
 | Workers | unirex crate, UCS (s) | regex bytes (s) | regex str (s) | UCS/bytes |
 |---:|---:|---:|---:|---:|
