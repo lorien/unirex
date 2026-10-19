@@ -73,6 +73,7 @@ Run from the repository root:
     cargo check --features python
     cargo build --release --features extension-module
     python3 tools/check_docs.py
+    python3 tools/gen_unicode_tables.py --check
     cargo publish --dry-run --manifest-path packaging/crates-stub/Cargo.toml
     PYTHONPATH=var/py python3 tools/test_python_binding.py
     PYTHONPATH=var/py python3 tools/bench_python.py --engine unirex --limit 100000 --cpu-list 2 --warmup-seconds 1 --repeat 2 --min-efficiency 0.90

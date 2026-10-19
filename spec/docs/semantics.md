@@ -30,11 +30,15 @@ Accepted:
   `Match` itself still reports group 0 only.
 - Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
   octal escapes.
+- CPython `\w`, `\d`, `\s` and their negations, both standalone and inside a
+  bracket class. The tables are generated from CPython `re` itself by
+  `tools/gen_unicode_tables.py`, so they follow the CPython Unicode version
+  rather than Rust `regex`.
+- Word boundaries `\b` and `\B`.
+- `$`: end of the haystack, or just before a final newline.
 
 Rejected with a positioned error:
 
-- `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`.
-- `$`.
 - Flags `i`, `m`, `s`, `x`, and every inline or scoped flag group.
 - Lazy repetition.
 - Named capture groups.

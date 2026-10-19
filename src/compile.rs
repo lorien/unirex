@@ -11,6 +11,7 @@ use regex_syntax::ast::{
 
 use crate::error::Error;
 use crate::ucs::{ByteFinder, Scan, UcsKind, Unit};
+use crate::unicode_tables;
 
 const MAX_PATTERN_LEN: usize = 100_000;
 const MAX_INSTS: usize = 100_000;
@@ -28,6 +29,9 @@ pub(crate) struct Program {
     pub(crate) first: Option<FirstSet>,
     /// Number of capture groups, excluding group 0.
     pub(crate) groups: usize,
+    /// The program contains an assertion the DFA cannot evaluate without
+    /// surrounding context, so the DFA must decline it.
+    pub(crate) uses_context: bool,
 }
 
 /// A conservative set of code units that can begin a match.
@@ -114,13 +118,37 @@ pub(crate) enum AssertKind {
     Start,
     /// End of the haystack.
     End,
+    /// End of the haystack, or just before a final newline (Python `$`).
+    EndLine,
+    /// Between a word and a non-word unit, or a word unit and the haystack
+    /// edge.
+    WordBoundary,
+    /// Complement of [`AssertKind::WordBoundary`].
+    NotWordBoundary,
 }
 
 impl AssertKind {
-    pub(crate) fn holds(self, pos: usize, len: usize) -> bool {
+    /// Whether the assertion holds at `pos`, given the unit before it and the
+    /// unit at it. `None` means the haystack edge.
+    pub(crate) fn holds(
+        self,
+        prev: Option<u32>,
+        next: Option<u32>,
+        pos: usize,
+        len: usize,
+    ) -> bool {
         match self {
             AssertKind::Start => pos == 0,
             AssertKind::End => pos == len,
+            AssertKind::EndLine => pos == len || (pos + 1 == len && next == Some('\n' as u32)),
+            AssertKind::WordBoundary => {
+                unicode_tables::is_word(prev.unwrap_or(0))
+                    != unicode_tables::is_word(next.unwrap_or(0))
+            }
+            AssertKind::NotWordBoundary => {
+                unicode_tables::is_word(prev.unwrap_or(0))
+                    == unicode_tables::is_word(next.unwrap_or(0))
+            }
         }
     }
 }
@@ -297,6 +325,9 @@ struct Compiler {
     classes: Vec<Class>,
     total_class_ranges: usize,
     groups: usize,
+    /// Set when the program contains an assertion that depends on the
+    /// surrounding units, which the lazy DFA cannot evaluate.
+    uses_context: bool,
 }
 
 impl Compiler {
@@ -306,6 +337,7 @@ impl Compiler {
             classes: Vec::new(),
             total_class_ranges: 0,
             groups: 0,
+            uses_context: false,
         }
     }
 
@@ -324,6 +356,7 @@ impl Compiler {
             start: 0,
             first,
             groups: self.groups,
+            uses_context: self.uses_context,
         })
     }
 
@@ -388,14 +421,35 @@ impl Compiler {
                     self.push(Inst::Assert(AssertKind::End), &assertion.span)?;
                     Ok(())
                 }
-                AssertionKind::EndLine => Err(unsupported("'$'", &assertion.span)),
+                AssertionKind::EndLine => {
+                    self.uses_context = true;
+                    self.push(Inst::Assert(AssertKind::EndLine), &assertion.span)?;
+                    Ok(())
+                }
+                AssertionKind::WordBoundary => {
+                    self.uses_context = true;
+                    self.push(Inst::Assert(AssertKind::WordBoundary), &assertion.span)?;
+                    Ok(())
+                }
+                AssertionKind::NotWordBoundary => {
+                    self.uses_context = true;
+                    self.push(Inst::Assert(AssertKind::NotWordBoundary), &assertion.span)?;
+                    Ok(())
+                }
                 _ => Err(unsupported("word-boundary assertions", &assertion.span)),
             },
             Ast::ClassUnicode(class) => Err(unsupported("Unicode property classes", &class.span)),
-            Ast::ClassPerl(class) => Err(unsupported(
-                "Perl character classes (\\w, \\d, \\s)",
-                &class.span,
-            )),
+            Ast::ClassPerl(class) => {
+                let ranges = match class.kind {
+                    ast::ClassPerlKind::Word => unicode_tables::WORD.to_vec(),
+                    ast::ClassPerlKind::Digit => unicode_tables::DIGIT.to_vec(),
+                    ast::ClassPerlKind::Space => unicode_tables::SPACE.to_vec(),
+                };
+                let lowered = Class::new(ranges, class.negated);
+                let id = self.add_class(lowered, &class.span)?;
+                self.push(Inst::Class(id), &class.span)?;
+                Ok(())
+            }
             Ast::ClassBracketed(class) => {
                 let lowered = self.lower_bracketed(class)?;
                 let id = self.add_class(lowered, &class.span)?;
@@ -618,10 +672,21 @@ impl Compiler {
             ClassSetItem::Unicode(class) => {
                 Err(unsupported("Unicode property classes", &class.span))
             }
-            ClassSetItem::Perl(class) => Err(unsupported(
-                "Perl character classes (\\w, \\d, \\s)",
-                &class.span,
-            )),
+            ClassSetItem::Perl(class) => {
+                let table = match class.kind {
+                    ast::ClassPerlKind::Word => unicode_tables::WORD,
+                    ast::ClassPerlKind::Digit => unicode_tables::DIGIT,
+                    ast::ClassPerlKind::Space => unicode_tables::SPACE,
+                };
+                if class.negated {
+                    // A negated Perl class inside a bracket class contributes
+                    // the complement of its ranges.
+                    ranges.extend(complement(table));
+                } else {
+                    ranges.extend_from_slice(table);
+                }
+                Ok(())
+            }
             ClassSetItem::Bracketed(class) => {
                 Err(unsupported("nested character classes", &class.span))
             }
@@ -633,6 +698,22 @@ impl Compiler {
             }
         }
     }
+}
+
+/// Complement of a sorted range list over the whole code-point space.
+fn complement(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut out = Vec::with_capacity(ranges.len() + 1);
+    let mut next = 0u32;
+    for &(lo, hi) in ranges {
+        if lo > next {
+            out.push((next, lo - 1));
+        }
+        next = hi.saturating_add(1);
+    }
+    if next <= MAX_CODEPOINT {
+        out.push((next, MAX_CODEPOINT));
+    }
+    out
 }
 
 const MAX_FIRST_UNITS: u64 = 1024;

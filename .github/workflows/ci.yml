@@ -126,3 +126,5 @@ jobs:
           python-version: "3.13"
       - name: Check links, markers, and stale names
         run: python3 tools/check_docs.py
+      - name: Check the generated class tables are current
+        run: python3 tools/gen_unicode_tables.py --check

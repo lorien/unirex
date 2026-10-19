@@ -12,6 +12,7 @@ mod pikevm;
 #[cfg(feature = "python")]
 mod python;
 mod ucs;
+mod unicode_tables;
 
 pub use error::Error;
 pub use pikevm::Scratch;

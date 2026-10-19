@@ -67,6 +67,12 @@ impl Cache {
     }
 
     fn new_with_limit(program: &Program, limit: usize) -> Option<Cache> {
+        if program.uses_context {
+            // Word boundaries and `$` depend on the unit before or after the
+            // current position, which a DFA state cannot see. Such patterns
+            // stay on the PikeVM; see ADR-0017 and `architecture.md`.
+            return None;
+        }
         let boundaries = class_boundaries(program);
         if boundaries.len() < 2 {
             return None;
@@ -265,6 +271,10 @@ fn closure(program: &Program, seeds: &[usize], at_start: bool, at_end: bool) -> 
                     stack.push(pc + 1);
                 }
             }
+            // The cache declines these programs before reaching this point.
+            Inst::Assert(AssertKind::EndLine)
+            | Inst::Assert(AssertKind::WordBoundary)
+            | Inst::Assert(AssertKind::NotWordBoundary) => {}
             Inst::Assert(AssertKind::End) => {
                 if at_end {
                     if pc + 1 < program.insts.len() {

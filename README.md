@@ -7,10 +7,9 @@ UCS-1/UCS-2/UCS-4 string buffers directly, with no UTF-8 transcode and no
 backtracking.
 
 **Status: experimental, not a `re` replacement.** The engine implements a
-strict Python syntax subset with group-0 matching only. Python `\w`, `\d`,
-`\s`, `\b`, `$`, flags, and match objects are not implemented yet; patterns
-that use them are rejected with a positioned error rather than reinterpreted
-with Rust `regex` semantics. The one-thread end-to-end time is at parity with
+strict Python syntax subset. Flags and match objects are not implemented yet;
+patterns that use them are rejected with a positioned error rather than
+reinterpreted with Rust `regex` semantics. The one-thread end-to-end time is at parity with
 CPython `re` on the Telegram benchmark; four-thread scaling is worse than Rust
 `regex`.
 
@@ -84,6 +83,9 @@ prefilter skips the bulk of the work.
 - Anchors `^`, `\A`, `\Z`, `\z`.
 - Escapes `\a \f \t \n \r \v`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, and Python
   octal escapes.
+- CPython `\w`, `\d`, `\s` and negations, standalone or inside a bracket class,
+  with tables generated from CPython `re` itself.
+- Word boundaries `\b` and `\B`, and `$` before a final newline.
 
 Python numeric escape rules are enforced: outside a class, `\1` and `\11` are
 backreferences and are rejected; inside a class they are octal. Octal values
@@ -94,7 +96,6 @@ above `0o377` are rejected.
 Every unsupported construct fails at compile time with a positioned error. It
 is never silently reinterpreted with Rust `regex` semantics.
 
-- `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b`, `\B`, and `$`.
 - Flags `i`, `m`, `s`, `x`, and inline flags.
 - Lazy repetition.
 - `\N{...}`, `\p{...}`, brace hex such as `\x{41}`.
@@ -132,7 +133,7 @@ code point.
 | 5. PyO3 binding and end-to-end benchmark | implemented on CPython 3.13 GIL |
 | Continuous integration | not set up |
 
-Known gaps: match objects, Python `\w`/`\d`/`\s`, Python word boundaries,
+Known gaps: match objects, flags,
 `$`, flags, lazy repetition, and verification on CPython versions other than
 3.13 and on free-threaded builds. See `spec/docs/milestones.md`.
 

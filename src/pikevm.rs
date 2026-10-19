@@ -108,7 +108,7 @@ fn find_pike<U: Unit>(
         }
 
         if matched.is_none() {
-            add_thread(clist, stack, prog, prog.start, pos, pos, hay.len());
+            add_thread(clist, stack, prog, prog.start, pos, pos, hay);
         }
 
         let mut index = 0;
@@ -118,12 +118,12 @@ fn find_pike<U: Unit>(
             match prog.insts[pc] {
                 Inst::Char(expected) => {
                     if pos < hay.len() && hay[pos].into() == expected {
-                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay.len());
+                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay);
                     }
                 }
                 Inst::Class(class_id) => {
                     if pos < hay.len() && prog.classes[class_id].contains(hay[pos].into()) {
-                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay.len());
+                        add_thread(nlist, stack, prog, pc + 1, start, pos + 1, hay);
                     }
                 }
                 Inst::Match => {
@@ -150,14 +150,14 @@ fn find_pike<U: Unit>(
     matched
 }
 
-fn add_thread(
+fn add_thread<U: Unit>(
     list: &mut ThreadList,
     stack: &mut Vec<(usize, usize)>,
     prog: &Program,
     pc: usize,
     thread_start: usize,
     pos: usize,
-    hay_len: usize,
+    hay: &[U],
 ) {
     stack.clear();
     stack.push((pc, thread_start));
@@ -172,7 +172,7 @@ fn add_thread(
             }
             Inst::Jump(target) => stack.push((target, start)),
             Inst::Assert(kind) => {
-                if assert_holds(kind, pos, hay_len) {
+                if assert_holds(kind, hay, pos) {
                     stack.push((pc + 1, start));
                 }
             }
@@ -187,8 +187,15 @@ fn add_thread(
     }
 }
 
-fn assert_holds(kind: AssertKind, pos: usize, len: usize) -> bool {
-    kind.holds(pos, len)
+/// Whether `kind` holds at `pos`, which needs the units on both sides.
+fn assert_holds<U: Unit>(kind: AssertKind, hay: &[U], pos: usize) -> bool {
+    let prev = if pos == 0 {
+        None
+    } else {
+        Some(hay[pos - 1].into())
+    };
+    let next = hay.get(pos).map(|unit| (*unit).into());
+    kind.holds(prev, next, pos, hay.len())
 }
 
 /// Thread lists with per-thread capture slots.
@@ -416,7 +423,7 @@ impl<U: Unit> Backtrack<'_, U> {
                 }
             }
             Inst::Assert(kind) => {
-                kind.holds(pos, self.hay.len()) && self.step(pc + 1, pos, depth + 1)
+                assert_holds(kind, self.hay, pos) && self.step(pc + 1, pos, depth + 1)
             }
             Inst::Match => pos == self.end,
         }
@@ -448,7 +455,7 @@ fn capture_slots_pike<U: Unit>(
     cap.arena.extend_from_slice(slots);
     cap.stack.clear();
     cap.stack.push((prog.start, 0));
-    close_with_slots(prog, cap, 0, start, hay.len());
+    close_with_slots(prog, cap, 0, start, hay);
 
     let mut list = 0usize;
     let mut found: Option<usize> = None;
@@ -473,7 +480,7 @@ fn capture_slots_pike<U: Unit>(
                             .extend_from_slice(&cap.slots[list][offset..offset + width]);
                         cap.stack.clear();
                         cap.stack.push((pc + 1, arena_offset));
-                        close_with_slots(prog, cap, next, pos + 1, hay.len());
+                        close_with_slots(prog, cap, next, pos + 1, hay);
                     }
                 }
                 Inst::Class(class_id) => {
@@ -483,7 +490,7 @@ fn capture_slots_pike<U: Unit>(
                             .extend_from_slice(&cap.slots[list][offset..offset + width]);
                         cap.stack.clear();
                         cap.stack.push((pc + 1, arena_offset));
-                        close_with_slots(prog, cap, next, pos + 1, hay.len());
+                        close_with_slots(prog, cap, next, pos + 1, hay);
                     }
                 }
                 Inst::Match => {
@@ -528,7 +535,13 @@ fn capture_slots_pike<U: Unit>(
 }
 
 /// Epsilon closure that writes `Save` instructions into the thread's slots.
-fn close_with_slots(prog: &Program, cap: &mut CapLists, list: usize, pos: usize, hay_len: usize) {
+fn close_with_slots<U: Unit>(
+    prog: &Program,
+    cap: &mut CapLists,
+    list: usize,
+    pos: usize,
+    hay: &[U],
+) {
     let width = cap.width;
     while let Some((pc, offset)) = cap.stack.pop() {
         if !cap.mark(list, pc) {
@@ -553,7 +566,7 @@ fn close_with_slots(prog: &Program, cap: &mut CapLists, list: usize, pos: usize,
                 }
             }
             Inst::Assert(kind) => {
-                if kind.holds(pos, hay_len) && pc + 1 < prog.insts.len() {
+                if assert_holds(kind, hay, pos) && pc + 1 < prog.insts.len() {
                     cap.stack.push((pc + 1, offset));
                 }
             }

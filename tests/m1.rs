@@ -110,18 +110,62 @@ fn python_empty_match_iteration() {
     assert_eq!(iter1(r"\Z", "a"), vec![(1, 1)]);
 }
 
+/// Spans produced by CPython `re` for the same patterns and haystacks.
+#[test]
+fn python_classes_boundaries_and_end_anchor() {
+    type Case = (&'static str, &'static str, &'static [(usize, usize)]);
+    let cases: &[Case] = &[
+        (r"\w+", "asd 123 _x", &[(0, 3), (4, 7), (8, 10)]),
+        (r"\s+", "a b\tc", &[(1, 2), (3, 4)]),
+        (r"\W+", "a-b_c!", &[(1, 2), (5, 6)]),
+        (r"[\w.]+", "a.b c", &[(0, 3), (4, 5)]),
+        (r"[^\w]+", "a.b c", &[(1, 2), (3, 4)]),
+        (r"\bfoo\b", "foo foobar foo", &[(0, 3), (11, 14)]),
+        (r"\Bfoo", "xfoo foo", &[(1, 4)]),
+        (r"foo$", "foo\n", &[(0, 3)]),
+        (r"foo$", "foobar\n", &[]),
+        (r"\b", "ab cd", &[(0, 0), (2, 2), (3, 3), (5, 5)]),
+        (r"\s\b", "a b", &[(1, 2)]),
+    ];
+    for (pattern, hay, expected) in cases {
+        assert_eq!(
+            &iter1(pattern, hay)[..],
+            *expected,
+            "pattern {pattern:?} haystack {hay:?}"
+        );
+    }
+}
+
+#[test]
+fn python_classes_work_on_wide_haystacks() {
+    let digits = Regex::new(r"\d+").unwrap();
+    let arabic2: Vec<u16> = "abc 123 \u{664}\u{665}".encode_utf16().collect();
+    assert_eq!(
+        spans(digits.find_iter(Ucs::Ucs2(&arabic2))),
+        vec![(4, 7), (8, 10)]
+    );
+    let arabic4: Vec<u32> = "abc 123 \u{664}\u{665}".chars().map(u32::from).collect();
+    assert_eq!(
+        spans(digits.find_iter(Ucs::Ucs4(&arabic4))),
+        vec![(4, 7), (8, 10)]
+    );
+
+    let re = Regex::new(r"\w+").unwrap();
+    let units2: Vec<u16> = "Привет мир".encode_utf16().collect();
+    assert_eq!(
+        spans(re.find_iter(Ucs::Ucs2(&units2))),
+        vec![(0, 6), (7, 10)]
+    );
+    let units4: Vec<u32> = "Привет мир".chars().map(u32::from).collect();
+    assert_eq!(
+        spans(re.find_iter(Ucs::Ucs4(&units4))),
+        vec![(0, 6), (7, 10)]
+    );
+}
+
 #[test]
 fn rejects_rust_dialect_and_unimplemented_python() {
     for pattern in [
-        r"\w",
-        r"\W",
-        r"\d",
-        r"\D",
-        r"\s",
-        r"\S",
-        r"\b",
-        r"\B",
-        "$",
         "(?i)a",
         "(?m)a",
         "(?s)a",
@@ -160,7 +204,7 @@ fn rejects_rust_dialect_and_unimplemented_python() {
         assert_rejected(pattern);
     }
 
-    for pattern in [r"\w", r"\b", "$", "(?i)a", "a*?", "[a&&b]"] {
+    for pattern in ["(?i)a", "a*?", "[a&&b]", r"\p{L}", "(?P<n>a)"] {
         assert_unsupported(pattern);
     }
 }

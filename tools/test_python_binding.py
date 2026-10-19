@@ -41,6 +41,16 @@ PATTERNS = [
     r"([a-c]+)(x)",
     r"((a)*)",
     r"()(a)",
+    r"\w+",
+    r"\W+",
+    r"\d+",
+    r"\s+",
+    r"[\w.]+",
+    r"[^\w]+",
+    r"\bfoo\b",
+    r"\Bfoo",
+    r"foo$",
+    r"\b",
 ]
 HAYSTACKS = [
     "",
