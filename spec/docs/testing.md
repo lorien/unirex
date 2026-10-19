@@ -73,6 +73,8 @@ against CPython `re`.
    ledger: closing a gap means deleting its entry in the same commit. The shim
    is process-wide, so the file runs in its own pytest invocation, and
    `tests/re_guard.py` fails if a parity suite ever runs with a replaced `re`.
+   The vendored file is 3.13.5's, and it asserts interpreter-version behaviour,
+   so CI runs it on 3.13 only; other interpreters get the binding smoke test.
 15. **Planned follow-ups.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 
