@@ -172,7 +172,7 @@ fn add_thread<U: Unit>(
             }
             Inst::Jump(target) => stack.push((target, start)),
             Inst::Assert(kind) => {
-                if assert_holds(kind, hay, pos) {
+                if assert_holds(kind, hay, pos, prog.ascii) {
                     stack.push((pc + 1, start));
                 }
             }
@@ -188,14 +188,14 @@ fn add_thread<U: Unit>(
 }
 
 /// Whether `kind` holds at `pos`, which needs the units on both sides.
-fn assert_holds<U: Unit>(kind: AssertKind, hay: &[U], pos: usize) -> bool {
+fn assert_holds<U: Unit>(kind: AssertKind, hay: &[U], pos: usize, ascii: bool) -> bool {
     let prev = if pos == 0 {
         None
     } else {
         Some(hay[pos - 1].into())
     };
     let next = hay.get(pos).map(|unit| (*unit).into());
-    kind.holds(prev, next, pos, hay.len())
+    kind.holds(prev, next, pos, hay.len(), ascii)
 }
 
 /// Thread lists with per-thread capture slots.
@@ -423,7 +423,8 @@ impl<U: Unit> Backtrack<'_, U> {
                 }
             }
             Inst::Assert(kind) => {
-                assert_holds(kind, self.hay, pos) && self.step(pc + 1, pos, depth + 1)
+                assert_holds(kind, self.hay, pos, self.prog.ascii)
+                    && self.step(pc + 1, pos, depth + 1)
             }
             Inst::Match => pos == self.end,
         }
@@ -566,7 +567,7 @@ fn close_with_slots<U: Unit>(
                 }
             }
             Inst::Assert(kind) => {
-                if assert_holds(kind, hay, pos) && pc + 1 < prog.insts.len() {
+                if assert_holds(kind, hay, pos, prog.ascii) && pc + 1 < prog.insts.len() {
                     cap.stack.push((pc + 1, offset));
                 }
             }

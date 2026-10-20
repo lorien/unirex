@@ -74,6 +74,16 @@ impl Pattern {
         compile::compile(pattern).map(|prog| Pattern { prog })
     }
 
+    /// Compile a `bytes` pattern with `re` bytes semantics.
+    ///
+    /// The pattern is the latin-1 decoding of the byte string, so byte values
+    /// survive the parser; classes and case folding are ASCII-only and the
+    /// haystack is a byte slice.
+    pub fn new_bytes(pattern: &[u8]) -> Result<Pattern, Error> {
+        let decoded: String = pattern.iter().map(|&byte| byte as char).collect();
+        compile::compile_bytes(&decoded).map(|prog| Pattern { prog })
+    }
+
     /// Allocate reusable search scratch for this pattern.
     ///
     /// Reuse one `Scratch` across searches to avoid per-search allocation.
@@ -122,6 +132,27 @@ impl Pattern {
             Ucs::Ucs4(units) => {
                 pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
             }
+        }
+    }
+
+    /// Find the leftmost match in a byte slice, using `scratch`.
+    pub fn find_bytes_with(&self, scratch: &mut Scratch, hay: &[u8]) -> Option<Match> {
+        pikevm::find(&self.prog, scratch, hay, 0, None)
+    }
+
+    /// Iterate over matches in a byte slice.
+    pub fn find_iter_bytes_with<'r, 's>(
+        &'r self,
+        scratch: &'s mut Scratch,
+        hay: &'r [u8],
+    ) -> MatchBytes<'r, 's> {
+        MatchBytes {
+            re: self,
+            scratch,
+            hay,
+            pos: 0,
+            retry_nonempty_at: None,
+            done: false,
         }
     }
 
@@ -277,3 +308,46 @@ impl Iterator for MatchesWith<'_, '_, '_> {
 }
 
 impl std::iter::FusedIterator for MatchesWith<'_, '_, '_> {}
+
+/// Iterator over matches in a byte slice.
+pub struct MatchBytes<'r, 's> {
+    re: &'r Pattern,
+    scratch: &'s mut Scratch,
+    hay: &'r [u8],
+    pos: usize,
+    retry_nonempty_at: Option<usize>,
+    done: bool,
+}
+
+impl Iterator for MatchBytes<'_, '_> {
+    type Item = Match;
+
+    fn next(&mut self) -> Option<Match> {
+        if self.done {
+            return None;
+        }
+        let found = pikevm::find(
+            &self.re.prog,
+            self.scratch,
+            self.hay,
+            self.pos,
+            self.retry_nonempty_at,
+        );
+        match found {
+            Some(found) => {
+                if found.is_empty() {
+                    self.pos = found.end();
+                    self.retry_nonempty_at = Some(found.end());
+                } else {
+                    self.pos = found.end();
+                    self.retry_nonempty_at = None;
+                }
+                Some(found)
+            }
+            None => {
+                self.done = true;
+                None
+            }
+        }
+    }
+}

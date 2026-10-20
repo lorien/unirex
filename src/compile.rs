@@ -34,6 +34,8 @@ pub(crate) struct Program {
     pub(crate) uses_context: bool,
     /// Capture names paired with their group index.
     pub(crate) names: Vec<(String, usize)>,
+    /// Bytes semantics: ASCII classes and ASCII-only case folding.
+    pub(crate) ascii: bool,
 }
 
 /// A conservative set of code units that can begin a match.
@@ -142,24 +144,23 @@ impl AssertKind {
         next: Option<u32>,
         pos: usize,
         len: usize,
+        ascii: bool,
     ) -> bool {
+        let is_word = |unit: Option<u32>| match unit {
+            Some(unit) if ascii => ascii_is_word(unit),
+            Some(unit) => unicode_tables::is_word(unit),
+            None => false,
+        };
         match self {
             AssertKind::Start => pos == 0,
             AssertKind::End => pos == len,
             AssertKind::EndLine => pos == len || (pos + 1 == len && next == Some('\n' as u32)),
             AssertKind::StartLine => pos == 0 || prev == Some('\n' as u32),
             AssertKind::EndAnyLine => pos == len || next == Some('\n' as u32),
-            AssertKind::WordBoundary => {
-                unicode_tables::is_word(prev.unwrap_or(0))
-                    != unicode_tables::is_word(next.unwrap_or(0))
-            }
+            AssertKind::WordBoundary => is_word(prev) != is_word(next),
             // CPython never reports `\B` in an empty string, even though both
             // sides are trivially non-word there.
-            AssertKind::NotWordBoundary => {
-                len > 0
-                    && unicode_tables::is_word(prev.unwrap_or(0))
-                        == unicode_tables::is_word(next.unwrap_or(0))
-            }
+            AssertKind::NotWordBoundary => len > 0 && is_word(prev) == is_word(next),
         }
     }
 }
@@ -223,6 +224,15 @@ impl Class {
 
 /// Compile a pattern with the strict Python-dialect subset.
 pub(crate) fn compile(pattern: &str) -> Result<Program, Error> {
+    compile_with_ascii(pattern, false)
+}
+
+/// Compile with `re` bytes semantics: ASCII classes and ASCII case folding.
+pub(crate) fn compile_bytes(pattern: &str) -> Result<Program, Error> {
+    compile_with_ascii(pattern, true)
+}
+
+fn compile_with_ascii(pattern: &str, ascii: bool) -> Result<Program, Error> {
     if pattern.len() > MAX_PATTERN_LEN {
         return Err(Error::TooLarge {
             what: "pattern length",
@@ -234,7 +244,7 @@ pub(crate) fn compile(pattern: &str) -> Result<Program, Error> {
     validate_python_escapes(&normalized)?;
     let mut parser = ast::parse::ParserBuilder::new().octal(true).build();
     let ast = parser.parse(&normalized)?;
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new(ascii);
     compiler.compile(&ast)?;
     compiler.finish()
 }
@@ -341,6 +351,7 @@ struct Flags {
 }
 
 struct Compiler {
+    ascii: bool,
     flags: Flags,
     /// Inside a `#` comment while verbose mode is active.
     in_comment: bool,
@@ -355,8 +366,9 @@ struct Compiler {
 }
 
 impl Compiler {
-    fn new() -> Compiler {
+    fn new(ascii: bool) -> Compiler {
         Compiler {
+            ascii,
             flags: Flags::default(),
             in_comment: false,
             insts: Vec::new(),
@@ -385,6 +397,7 @@ impl Compiler {
             groups: self.groups,
             uses_context: self.uses_context,
             names: self.names,
+            ascii: self.ascii,
         })
     }
 
@@ -446,6 +459,17 @@ impl Compiler {
     /// Range set closed under case folding, using the generated fold table.
     fn case_ranges(&self, ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
         let mut expanded = ranges.to_vec();
+        if self.ascii {
+            // Bytes IGNORECASE folds ASCII letters to their opposite case and
+            // nothing else.
+            for unit in 0x41u32..=0x5A {
+                if ranges_contain(ranges, unit) || ranges_contain(ranges, unit + 0x20) {
+                    expanded.push((unit, unit));
+                    expanded.push((unit + 0x20, unit + 0x20));
+                }
+            }
+            return expanded;
+        }
         for &(left, right) in unicode_tables::FOLD {
             if ranges_contain(ranges, left) {
                 expanded.push((right, right));
@@ -565,10 +589,13 @@ impl Compiler {
             },
             Ast::ClassUnicode(class) => Err(unsupported("Unicode property classes", &class.span)),
             Ast::ClassPerl(class) => {
-                let ranges = match class.kind {
-                    ast::ClassPerlKind::Word => unicode_tables::WORD.to_vec(),
-                    ast::ClassPerlKind::Digit => unicode_tables::DIGIT.to_vec(),
-                    ast::ClassPerlKind::Space => unicode_tables::SPACE.to_vec(),
+                let ranges = match (&class.kind, self.ascii) {
+                    (ast::ClassPerlKind::Word, true) => ASCII_WORD.to_vec(),
+                    (ast::ClassPerlKind::Digit, true) => ASCII_DIGIT.to_vec(),
+                    (ast::ClassPerlKind::Space, true) => ASCII_SPACE.to_vec(),
+                    (ast::ClassPerlKind::Word, false) => unicode_tables::WORD.to_vec(),
+                    (ast::ClassPerlKind::Digit, false) => unicode_tables::DIGIT.to_vec(),
+                    (ast::ClassPerlKind::Space, false) => unicode_tables::SPACE.to_vec(),
                 };
                 let mut lowered = Class::new(ranges, class.negated);
                 if self.flags.ignore_case {
@@ -870,10 +897,13 @@ impl Compiler {
                 Err(unsupported("Unicode property classes", &class.span))
             }
             ClassSetItem::Perl(class) => {
-                let table = match class.kind {
-                    ast::ClassPerlKind::Word => unicode_tables::WORD,
-                    ast::ClassPerlKind::Digit => unicode_tables::DIGIT,
-                    ast::ClassPerlKind::Space => unicode_tables::SPACE,
+                let table = match (&class.kind, self.ascii) {
+                    (ast::ClassPerlKind::Word, true) => ASCII_WORD,
+                    (ast::ClassPerlKind::Digit, true) => ASCII_DIGIT,
+                    (ast::ClassPerlKind::Space, true) => ASCII_SPACE,
+                    (ast::ClassPerlKind::Word, false) => unicode_tables::WORD,
+                    (ast::ClassPerlKind::Digit, false) => unicode_tables::DIGIT,
+                    (ast::ClassPerlKind::Space, false) => unicode_tables::SPACE,
                 };
                 if class.negated {
                     // A negated Perl class inside a bracket class contributes
@@ -895,6 +925,18 @@ impl Compiler {
             }
         }
     }
+}
+
+/// `\\w` for bytes patterns: ASCII letters, digits, and underscore.
+const ASCII_WORD: &[(u32, u32)] = &[(0x30, 0x39), (0x41, 0x5A), (0x5F, 0x5F), (0x61, 0x7A)];
+/// `\\d` for bytes patterns.
+const ASCII_DIGIT: &[(u32, u32)] = &[(0x30, 0x39)];
+/// `\\s` for bytes patterns.
+const ASCII_SPACE: &[(u32, u32)] = &[(0x09, 0x0D), (0x20, 0x20)];
+
+/// Whether a byte value is a word unit under bytes semantics.
+fn ascii_is_word(unit: u32) -> bool {
+    unit < 0x80 && (unit as u8).is_ascii_alphanumeric() || unit == 0x5F
 }
 
 /// Whether `name` is a valid Python capture-group name.

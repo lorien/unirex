@@ -91,6 +91,8 @@ prefilter skips the bulk of the work.
 - CPython `\w`, `\d`, `\s` and negations, standalone or inside a bracket class,
   with tables generated from CPython `re` itself.
 - Word boundaries `\b` and `\B`, and `$` before a final newline.
+- `bytes` patterns and subjects, with ASCII classes and ASCII-only case
+  folding, as in `re`.
 - Flags `i`, `m`, and `s`, global or scoped as `(?i:...)`, with case folding
   generated from CPython.
 - Lazy repetition (`*?`, `+?`, `??`, `{n,m}?`), named groups

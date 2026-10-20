@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use pyo3::Bound;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyAny, PyBytes, PyDict, PyList, PyString, PyTuple};
 
 use crate::{Match as CoreMatch, Pattern as CorePattern, Scratch, Ucs};
 
@@ -39,25 +39,37 @@ pub struct PyPattern {
     pattern: String,
     /// The `re` flag bits the pattern was compiled with.
     flags: u32,
+    /// Compiled from a `bytes` pattern, so subjects and results are bytes.
+    bytes: bool,
 }
 
 impl PyPattern {
     fn with_flags(pattern: &str, flags: u32) -> PyResult<PyPattern> {
+        PyPattern::build(pattern, flags, false)
+    }
+
+    fn build(pattern: &str, flags: u32, bytes: bool) -> PyResult<PyPattern> {
         // `re` reports UNICODE for str patterns compiled without flags.
-        let flags = flags | FLAG_UNICODE;
+        let flags = if bytes { flags } else { flags | FLAG_UNICODE };
         let prefix = flags_prefix(flags)?;
         let source = if prefix.is_empty() {
             pattern.to_string()
         } else {
             format!("{prefix}{pattern}")
         };
-        let inner = CorePattern::new(&source)
-            .map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
+        let compiled = if bytes {
+            CorePattern::new_bytes(source.as_bytes())
+        } else {
+            CorePattern::new(&source)
+        };
+        let inner =
+            compiled.map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
         Ok(PyPattern {
             inner,
             id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
             pattern: pattern.to_string(),
             flags,
+            bytes,
         })
     }
 
@@ -123,10 +135,14 @@ impl PyPattern {
         )
     }
 
-    /// The pattern string this was compiled from.
+    /// The pattern this was compiled from; `bytes` when the input was bytes.
     #[getter]
-    fn pattern(&self) -> String {
-        self.pattern.clone()
+    fn pattern<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        if self.bytes {
+            let raw: Vec<u8> = self.pattern.chars().map(|ch| ch as u8).collect();
+            return Ok(PyBytes::new(py, &raw).into_any());
+        }
+        Ok(PyString::new(py, &self.pattern).into_any())
     }
 
     /// The `re` flag bits this pattern was compiled with.
@@ -157,7 +173,54 @@ impl PyPattern {
     /// `re.findall`. With groups it is a list of group strings, or a list of
     /// tuples of group strings when the pattern has more than one group.
     /// Unmatched groups appear as empty strings, as in `re.findall`.
-    fn findall<'py>(&self, py: Python<'py>, text: &Bound<'_, PyString>) -> PyResult<Py<PyList>> {
+    fn findall<'py>(&self, py: Python<'py>, text: &Bound<'_, PyAny>) -> PyResult<Py<PyList>> {
+        if let Some(raw) = py_bytes(text) {
+            let list = PyList::empty(py);
+            let mut scratch = self.take_scratch();
+            let width = 2 * (self.inner.group_count() + 1);
+            let spans: Vec<(usize, usize, Vec<usize>)> = {
+                let found: Vec<crate::Match> =
+                    self.inner.find_iter_bytes_with(&mut scratch, raw).collect();
+                let mut slots = vec![usize::MAX; width];
+                let mut out = Vec::with_capacity(found.len());
+                for m in found {
+                    slots.fill(usize::MAX);
+                    if self
+                        .inner
+                        .captures(&mut scratch, Ucs::Ucs1(raw), m, &mut slots)
+                    {
+                        out.push((m.start(), m.end(), slots.clone()));
+                    }
+                }
+                out
+            };
+            self.put_scratch(scratch);
+            for (start, end, slots) in spans {
+                if self.inner.group_count() == 0 {
+                    list.append(PyBytes::new(py, &raw[start..end]))?;
+                } else {
+                    let mut values: Vec<Py<PyBytes>> = Vec::new();
+                    for index in 1..=(self.inner.group_count()) {
+                        let (lo, hi) = (slots[2 * index], slots[2 * index + 1]);
+                        let slice: &[u8] = if lo == usize::MAX || hi == usize::MAX {
+                            &[]
+                        } else {
+                            &raw[lo..hi]
+                        };
+                        values.push(PyBytes::new(py, slice).unbind());
+                    }
+                    if values.len() == 1 {
+                        list.append(Py::clone_ref(&values[0], py))?;
+                    } else {
+                        list.append(PyTuple::new(py, values)?)?;
+                    }
+                }
+            }
+            return Ok(list.unbind());
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         let ucs = py_ucs(text)?;
         let mut scratch = self.take_scratch();
         let list = PyList::empty(py);
@@ -579,6 +642,11 @@ fn substring<'py>(
 /// returned slices live no longer than the `Bound` borrow. `PyUnicode_READY`
 /// ensures legacy strings are materialized before `DATA` is read. No Python
 /// API is called while the slices are used.
+/// Borrow a byte subject, or report that it is not bytes.
+fn py_bytes<'a>(text: &'a Bound<'_, PyAny>) -> Option<&'a [u8]> {
+    text.cast::<PyBytes>().ok().map(|raw| raw.as_bytes())
+}
+
 fn py_ucs<'a>(text: &'a Bound<'_, PyString>) -> PyResult<Ucs<'a>> {
     let ptr = text.as_ptr();
     unsafe {
@@ -673,17 +741,23 @@ fn flags_prefix(flags: u32) -> PyResult<String> {
 
 #[pyfunction]
 #[pyo3(signature = (pattern, flags = 0))]
-fn compile(pattern: &str, flags: u32) -> PyResult<PyPattern> {
-    let prefix = flags_prefix(flags)?;
-    if prefix.is_empty() {
-        PyPattern::new(pattern)
-    } else {
-        PyPattern::new(&format!("{prefix}{pattern}"))
+fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<PyPattern> {
+    if let Ok(text) = pattern.cast::<PyString>() {
+        return PyPattern::with_flags(&text.to_cow()?, flags);
     }
+    if let Ok(raw) = pattern.cast::<PyBytes>() {
+        // Bytes patterns are decoded as latin-1 so byte values survive the
+        // parser, then compiled with ASCII class semantics.
+        let decoded: String = raw.as_bytes().iter().map(|&byte| byte as char).collect();
+        return PyPattern::build(&decoded, flags, true);
+    }
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "first argument must be a string or compiled pattern",
+    ))
 }
 
 fn compile_with(flags: u32, pattern: &str) -> PyResult<PyPattern> {
-    compile(pattern, flags)
+    PyPattern::with_flags(pattern, flags)
 }
 
 macro_rules! module_fn {
