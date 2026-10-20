@@ -35,9 +35,32 @@ pub struct PyPattern {
     inner: CorePattern,
     /// Stable identity used to match a thread-local scratch to this pattern.
     id: u64,
+    /// The source pattern, as passed to `compile`.
+    pattern: String,
+    /// The `re` flag bits the pattern was compiled with.
+    flags: u32,
 }
 
 impl PyPattern {
+    fn with_flags(pattern: &str, flags: u32) -> PyResult<PyPattern> {
+        // `re` reports UNICODE for str patterns compiled without flags.
+        let flags = flags | FLAG_UNICODE;
+        let prefix = flags_prefix(flags)?;
+        let source = if prefix.is_empty() {
+            pattern.to_string()
+        } else {
+            format!("{prefix}{pattern}")
+        };
+        let inner = CorePattern::new(&source)
+            .map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
+        Ok(PyPattern {
+            inner,
+            id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
+            pattern: pattern.to_string(),
+            flags,
+        })
+    }
+
     fn take_scratch(&self) -> Scratch {
         let id = self.id;
         let found = SCRATCHES.try_with(|cell| {
@@ -76,12 +99,40 @@ impl Drop for PyPattern {
 impl PyPattern {
     #[new]
     fn new(pattern: &str) -> PyResult<PyPattern> {
-        let inner = CorePattern::new(pattern)
-            .map_err(|err| Python::attach(|py| compile_error(py, pattern, &err)))?;
-        Ok(PyPattern {
-            inner,
-            id: NEXT_PATTERN_ID.fetch_add(1, Ordering::Relaxed),
-        })
+        PyPattern::with_flags(pattern, 0)
+    }
+
+    /// A cursor over `string`, as in `re.Pattern.scanner`.
+    #[pyo3(signature = (string, pos = 0))]
+    fn scanner(
+        &self,
+        py: Python<'_>,
+        string: &Bound<'_, PyString>,
+        pos: usize,
+    ) -> PyResult<Py<PyScanner>> {
+        let endpos = string.to_cow().map(|c| c.chars().count()).unwrap_or(0);
+        Py::new(
+            py,
+            PyScanner {
+                text: string.clone().unbind(),
+                pattern_text: self.pattern.clone(),
+                flags: self.flags,
+                position: pos,
+                endpos,
+            },
+        )
+    }
+
+    /// The pattern string this was compiled from.
+    #[getter]
+    fn pattern(&self) -> String {
+        self.pattern.clone()
+    }
+
+    /// The `re` flag bits this pattern was compiled with.
+    #[getter]
+    fn flags(&self) -> u32 {
+        self.flags
     }
 
     /// Number of capture groups, excluding group 0.
@@ -235,6 +286,9 @@ impl PyPattern {
             text: text.clone().unbind(),
             matches,
             position: 0,
+            pattern_text: self.pattern.clone(),
+            flags: self.flags,
+            endpos: text.to_cow().map(|c| c.chars().count()).unwrap_or(0),
             names: self
                 .inner
                 .capture_names()
@@ -267,6 +321,10 @@ impl PyPattern {
                                 text: text.clone().unbind(),
                                 slots,
                                 names: self.names(),
+                                pattern_text: self.pattern.clone(),
+                                flags: self.flags,
+                                pos: 0,
+                                endpos: ucs.len(),
                             },
                         )?)
                     } else {
@@ -337,6 +395,10 @@ impl PyPattern {
                         text: text.clone().unbind(),
                         slots: slots.clone(),
                         names: names.clone(),
+                        pattern_text: self.pattern.clone(),
+                        flags: self.flags,
+                        pos: 0,
+                        endpos: text.to_cow().map(|c| c.chars().count()).unwrap_or(0),
                     },
                 )?;
                 let out = repl.call1((m,))?;
@@ -708,6 +770,57 @@ fn split(
     compile_with(flags, pattern)?.split(py, text, maxsplit)
 }
 
+/// A `re.Scanner`-style cursor over a subject.
+#[pyclass(name = "Scanner", module = "unirex")]
+pub struct PyScanner {
+    text: Py<PyString>,
+    pattern_text: String,
+    flags: u32,
+    position: usize,
+    endpos: usize,
+}
+
+#[pymethods]
+impl PyScanner {
+    /// Anchored attempt at the current cursor, advancing on success.
+    #[pyo3(name = "match")]
+    fn match_(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyMatch>>> {
+        let hay = self.text.bind(py).to_cow()?.into_owned();
+        let tail: String = hay
+            .chars()
+            .skip(self.position)
+            .take(self.endpos.saturating_sub(self.position))
+            .collect();
+        let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
+        let Some(found) = pattern.match_(py, &PyString::new(py, &tail))? else {
+            return Ok(None);
+        };
+        let bound = found.bind(py);
+        let (start, end) = bound.borrow().span_of(0).unwrap_or((0, 0));
+        self.position += end;
+        let _ = start;
+        Ok(Some(found))
+    }
+
+    /// Unanchored attempt from the current cursor, advancing on success.
+    fn search(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyMatch>>> {
+        let hay = self.text.bind(py).to_cow()?.into_owned();
+        let tail: String = hay
+            .chars()
+            .skip(self.position)
+            .take(self.endpos.saturating_sub(self.position))
+            .collect();
+        let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
+        let Some(found) = pattern.search(py, &PyString::new(py, &tail))? else {
+            return Ok(None);
+        };
+        let bound = found.bind(py);
+        let (_, end) = bound.borrow().span_of(0).unwrap_or((0, 0));
+        self.position += end;
+        Ok(Some(found))
+    }
+}
+
 /// Escape a string the way CPython's `re.escape` does.
 #[pyfunction]
 fn escape(text: &str) -> String {
@@ -757,6 +870,10 @@ pub struct PyMatch {
     text: Py<PyString>,
     slots: Vec<usize>,
     names: Vec<(String, usize)>,
+    pattern_text: String,
+    flags: u32,
+    pos: usize,
+    endpos: usize,
 }
 
 fn resolve_index(names: &[(String, usize)], index: Option<&Bound<'_, PyAny>>) -> PyResult<usize> {
@@ -859,6 +976,64 @@ impl PyMatch {
         Ok(dict)
     }
 
+    /// The compiled pattern that produced this match.
+    #[getter]
+    fn re(&self, py: Python<'_>) -> PyResult<Py<PyPattern>> {
+        Py::new(py, PyPattern::with_flags(&self.pattern_text, self.flags)?)
+    }
+
+    /// The subject string.
+    #[getter]
+    fn string(&self, py: Python<'_>) -> Py<PyString> {
+        self.text.clone_ref(py)
+    }
+
+    /// Start of the search window.
+    #[getter]
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// End of the search window.
+    #[getter]
+    fn endpos(&self) -> usize {
+        self.endpos
+    }
+
+    /// Index of the last group that matched, or `None`.
+    #[getter]
+    fn lastindex(&self) -> Option<usize> {
+        (1..(self.slots.len() / 2))
+            .rev()
+            .find(|&index| self.span_of(index).is_some())
+    }
+
+    /// Name of the last group that matched, when it has one.
+    #[getter]
+    fn lastgroup(&self) -> Option<String> {
+        let index = self.lastindex()?;
+        self.names
+            .iter()
+            .find(|(_, group)| *group == index)
+            .map(|(name, _)| name.clone())
+    }
+
+    /// `m[index]` is `m.group(index)`, as in `re`.
+    fn __getitem__(
+        &self,
+        py: Python<'_>,
+        index: &Bound<'_, PyAny>,
+    ) -> PyResult<Option<Py<PyString>>> {
+        self.group(py, Some(index))
+    }
+
+    /// Expand `\1` and `\g<name>` references against this match.
+    fn expand(&self, py: Python<'_>, template: &str) -> PyResult<Py<PyString>> {
+        let hay = self.text.bind(py).to_cow()?.into_owned();
+        let expanded = expand_replacement(template, &hay, &self.slots, &self.names);
+        Ok(PyString::new(py, &expanded).unbind())
+    }
+
     fn __repr__(&self) -> String {
         match self.span_of(0) {
             Some((start, end)) => format!("<unirex.Match span=({start}, {end})>"),
@@ -877,6 +1052,9 @@ pub struct PyFindIter {
     matches: Vec<Vec<usize>>,
     position: usize,
     names: Vec<(String, usize)>,
+    pattern_text: String,
+    flags: u32,
+    endpos: usize,
 }
 
 #[pymethods]
@@ -895,6 +1073,10 @@ impl PyFindIter {
                     text: slf.text.clone_ref(py),
                     slots,
                     names: slf.names.clone(),
+                    pattern_text: slf.pattern_text.clone(),
+                    flags: slf.flags,
+                    pos: 0,
+                    endpos: slf.endpos,
                 },
             )
             .expect("Match construction cannot fail"),
@@ -935,6 +1117,7 @@ fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPattern>()?;
     m.add_class::<PyMatch>()?;
     m.add_class::<PyFindIter>()?;
+    m.add_class::<PyScanner>()?;
     m.add("error", m.py().get_type::<Error>())?;
     m.add("PatternError", m.py().get_type::<Error>())?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;

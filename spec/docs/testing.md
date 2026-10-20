@@ -79,7 +79,8 @@ against CPython `re`.
    matrix leg, free-threaded included; a leg whose ledger is missing generates
    one and reports it as a warning instead of failing silently.
    `tools/gen_conformance_ledger.py` regenerates a ledger for the running
-   interpreter.
+   interpreter; it ignores the existing ledger while doing so, otherwise the
+   skipped tests would hide their own failures.
 15. **Planned follow-ups.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 

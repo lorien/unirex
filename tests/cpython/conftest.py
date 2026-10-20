@@ -89,7 +89,9 @@ def pytest_pycollect_makemodule(module_path, parent):
 
 # ---------------------------------------------------------------- ledger
 
-if LEDGER_PATH.exists():
+import os as _os
+
+if LEDGER_PATH.exists() and not _os.environ.get("UNIREX_LEDGER_IGNORE"):
     _ledger = {}
     exec(compile(LEDGER_PATH.read_text(), str(LEDGER_PATH), "exec"), _ledger)
     EXPECTED = _ledger["EXPECTED"]

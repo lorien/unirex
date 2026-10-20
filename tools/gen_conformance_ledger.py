@@ -59,7 +59,7 @@ def main() -> int:
         [sys.executable, "-m", "pytest", str(suite), "-q", "--tb=no",
          "-p", "ledger_plugin"],
         cwd=ROOT,
-        env={**__import__("os").environ, **env, "UNIREX_LEDGER_OUT": str(out)},
+        env={**__import__("os").environ, **env, "UNIREX_LEDGER_OUT": str(out), "UNIREX_LEDGER_IGNORE": "1"},
         capture_output=True,
         text=True,
     )
