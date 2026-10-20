@@ -36,9 +36,11 @@ Accepted:
   rather than Rust `regex`.
 - Word boundaries `\b` and `\B`.
 - `$`: end of the haystack, or just before a final newline.
-- Bytes patterns and subjects, with CPython bytes semantics: `\w`, `\d`, `\s`
-  and word boundaries are ASCII, case folding is ASCII-only, and results are
-  `bytes`.
+- Bytes patterns and subjects across the whole API, with CPython bytes
+  semantics: `\w`, `\d`, `\s` and word boundaries are ASCII, case folding is
+  ASCII-only, and every result, group, and replacement is `bytes`.
+  `compile`, `search`, `match`, `fullmatch`, `findall`, `finditer`, `sub`,
+  `subn`, `split`, `escape`, and the `Pattern` methods all accept both.
 - Flags `i`, `m`, and `s`, global at the start of the pattern or scoped as
   `(?i:...)`. Case folding uses tables generated from CPython `re.IGNORECASE`,
   so special pairs such as `k`/`\u212A`, `s`/`\u017F`, and `i`/`\u0130`

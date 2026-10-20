@@ -282,23 +282,75 @@ impl PyPattern {
     }
 
     /// Return the first match at or after position zero.
-    fn search(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Option<Py<PyMatch>>> {
+    fn search(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+        if let Some(raw) = py_bytes(text) {
+            return self.bytes_match_with_position(py, raw, false, false);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.match_with_position(py, text, false, false)
     }
 
     /// Match only at the start of `text`.
     #[pyo3(name = "match")]
-    fn match_(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<Option<Py<PyMatch>>> {
+    fn match_(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+        if let Some(raw) = py_bytes(text) {
+            return self.bytes_match_with_position(py, raw, true, false);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.match_with_position(py, text, true, false)
     }
 
     /// Match the whole of `text`.
-    fn fullmatch(
+    fn fullmatch(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+        if let Some(raw) = py_bytes(text) {
+            return self.bytes_match_with_position(py, raw, true, true);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
+        self.match_with_position(py, text, true, true)
+    }
+
+    /// Bytes counterpart of `match_with_position`.
+    fn bytes_match_with_position(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyString>,
+        raw: &[u8],
+        anchored_start: bool,
+        anchored_end: bool,
     ) -> PyResult<Option<Py<PyMatch>>> {
-        self.match_with_position(py, text, true, true)
+        let mut scratch = self.take_scratch();
+        let width = 2 * (self.inner.group_count() + 1);
+        let mut slots = vec![usize::MAX; width];
+        let result = match self.inner.find_bytes_with(&mut scratch, raw) {
+            Some(found) => {
+                let ok = (!anchored_start || found.start() == 0)
+                    && (!anchored_end || found.end() == raw.len());
+                if ok
+                    && self
+                        .inner
+                        .captures(&mut scratch, Ucs::Ucs1(raw), found, &mut slots)
+                {
+                    Some(bytes_match(
+                        py,
+                        raw,
+                        slots.clone(),
+                        &self.names(),
+                        &self.pattern,
+                        self.flags,
+                    )?)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        self.put_scratch(scratch);
+        Ok(result)
     }
 
     /// Replace matches, returning the new string.
@@ -307,11 +359,19 @@ impl PyPattern {
         &self,
         py: Python<'_>,
         repl: &Bound<'_, PyAny>,
-        text: &Bound<'_, PyString>,
+        text: &Bound<'_, PyAny>,
         count: usize,
-    ) -> PyResult<Py<PyString>> {
+    ) -> PyResult<Py<PyAny>> {
+        if let Some(raw) = py_bytes(text) {
+            return self
+                .sub_bytes(py, raw, repl, count, false)
+                .map(|(result, _)| result);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.sub_impl(py, repl, text, count)
-            .map(|(result, _)| result)
+            .map(|(result, _)| result.into_any())
     }
 
     /// Replace matches, returning the new string and the replacement count.
@@ -320,10 +380,63 @@ impl PyPattern {
         &self,
         py: Python<'_>,
         repl: &Bound<'_, PyAny>,
-        text: &Bound<'_, PyString>,
+        text: &Bound<'_, PyAny>,
         count: usize,
-    ) -> PyResult<(Py<PyString>, usize)> {
+    ) -> PyResult<(Py<PyAny>, usize)> {
+        if let Some(raw) = py_bytes(text) {
+            return self.sub_bytes(py, raw, repl, count, true);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.sub_impl(py, repl, text, count)
+            .map(|(result, n)| (result.into_any(), n))
+    }
+
+    /// Bytes counterpart of `sub_impl`; returns bytes plus the replacement count.
+    fn sub_bytes(
+        &self,
+        py: Python<'_>,
+        raw: &[u8],
+        repl: &Bound<'_, PyAny>,
+        count: usize,
+        _counted: bool,
+    ) -> PyResult<(Py<PyAny>, usize)> {
+        let all = self.bytes_slots(py, raw)?;
+        let names = self.names();
+        let limit = if count == 0 {
+            all.len()
+        } else {
+            count.min(all.len())
+        };
+        let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+        let mut previous = 0usize;
+        let mut replaced = 0usize;
+        for (position, slots) in all.iter().enumerate() {
+            let (start, end) = (slots[0], slots[1]);
+            if start == usize::MAX || end == usize::MAX {
+                continue;
+            }
+            if position >= limit {
+                break;
+            }
+            out.extend_from_slice(&raw[previous..start]);
+            let hay: String = raw.iter().map(|&byte| byte as char).collect();
+            if repl.is_callable() {
+                let m = bytes_match(py, raw, slots.clone(), &names, &self.pattern, self.flags)?;
+                let value: Vec<u8> = repl.call1((m,))?.extract()?;
+                out.extend_from_slice(&value);
+            } else {
+                let template: Vec<u8> = repl.extract()?;
+                let template: String = template.iter().map(|&byte| byte as char).collect();
+                let expanded = expand_replacement(&template, &hay, slots, &names);
+                out.extend(expanded.chars().map(|ch| ch as u8));
+            }
+            previous = end;
+            replaced += 1;
+        }
+        out.extend_from_slice(&raw[previous..]);
+        Ok((PyBytes::new(py, &out).into_any().unbind(), replaced))
     }
 
     /// Split `text` on matches, keeping capture groups.
@@ -331,14 +444,105 @@ impl PyPattern {
     fn split(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyString>,
+        text: &Bound<'_, PyAny>,
         maxsplit: isize,
     ) -> PyResult<Py<PyList>> {
+        if let Some(raw) = py_bytes(text) {
+            return self.split_bytes(py, raw, maxsplit);
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.split_impl(py, text, maxsplit)
     }
 
+    /// Bytes counterpart of `split_impl`.
+    fn split_bytes(&self, py: Python<'_>, raw: &[u8], maxsplit: isize) -> PyResult<Py<PyList>> {
+        let all = self.bytes_slots(py, raw)?;
+        let list = PyList::empty(py);
+        let limit = if maxsplit <= 0 {
+            all.len()
+        } else {
+            (maxsplit as usize).min(all.len())
+        };
+        let mut previous = 0usize;
+        for (position, slots) in all.iter().enumerate() {
+            if position >= limit {
+                break;
+            }
+            let (start, end) = (slots[0], slots[1]);
+            if start == usize::MAX || end == usize::MAX {
+                continue;
+            }
+            list.append(PyBytes::new(py, &raw[previous..start]))?;
+            for index in 1..(slots.len() / 2) {
+                let (lo, hi) = (slots[2 * index], slots[2 * index + 1]);
+                if lo == usize::MAX || hi == usize::MAX {
+                    list.append(py.None())?;
+                } else {
+                    list.append(PyBytes::new(py, &raw[lo..hi]))?;
+                }
+            }
+            previous = end;
+        }
+        list.append(PyBytes::new(py, &raw[previous..]))?;
+        Ok(list.unbind())
+    }
+
+    /// All match slots for a bytes subject.
+    fn bytes_slots(&self, _py: Python<'_>, raw: &[u8]) -> PyResult<Vec<Vec<usize>>> {
+        let mut scratch = self.take_scratch();
+        let width = 2 * (self.inner.group_count() + 1);
+        let found: Vec<crate::Match> = self.inner.find_iter_bytes_with(&mut scratch, raw).collect();
+        let mut slots = vec![usize::MAX; width];
+        let mut out = Vec::with_capacity(found.len());
+        for m in found {
+            slots.fill(usize::MAX);
+            if self
+                .inner
+                .captures(&mut scratch, Ucs::Ucs1(raw), m, &mut slots)
+            {
+                out.push(slots.clone());
+            }
+        }
+        self.put_scratch(scratch);
+        Ok(out)
+    }
+
     /// Iterate over matches, yielding [`PyMatch`] objects.
-    fn finditer(&self, py: Python<'_>, text: &Bound<'_, PyString>) -> PyResult<PyFindIter> {
+    fn finditer(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<PyFindIter> {
+        if let Some(raw) = py_bytes(text) {
+            let mut scratch = self.take_scratch();
+            let width = 2 * (self.inner.group_count() + 1);
+            let found: Vec<crate::Match> =
+                self.inner.find_iter_bytes_with(&mut scratch, raw).collect();
+            let mut slots = vec![usize::MAX; width];
+            let mut matches = Vec::with_capacity(found.len());
+            for m in found {
+                slots.fill(usize::MAX);
+                if self
+                    .inner
+                    .captures(&mut scratch, Ucs::Ucs1(raw), m, &mut slots)
+                {
+                    matches.push(slots.clone());
+                }
+            }
+            self.put_scratch(scratch);
+            return Ok(PyFindIter {
+                text: PyString::new(py, "").unbind(),
+                raw: raw.to_vec(),
+                bytes: true,
+                matches,
+                position: 0,
+                names: self.names(),
+                pattern_text: self.pattern.clone(),
+                flags: self.flags,
+                endpos: raw.len(),
+            });
+        }
+        let text = text
+            .cast::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         let ucs = py_ucs(text)?;
         let mut scratch = self.take_scratch();
         let width = 2 * (self.inner.group_count() + 1);
@@ -347,6 +551,8 @@ impl PyPattern {
         let matches = found.into_iter().map(|(_, _, slots)| slots).collect();
         Ok(PyFindIter {
             text: text.clone().unbind(),
+            raw: Vec::new(),
+            bytes: false,
             matches,
             position: 0,
             pattern_text: self.pattern.clone(),
@@ -382,6 +588,8 @@ impl PyPattern {
                             py,
                             PyMatch {
                                 text: text.clone().unbind(),
+                                raw: Vec::new(),
+                                bytes: false,
                                 slots,
                                 names: self.names(),
                                 pattern_text: self.pattern.clone(),
@@ -456,6 +664,8 @@ impl PyPattern {
                     py,
                     PyMatch {
                         text: text.clone().unbind(),
+                        raw: Vec::new(),
+                        bytes: false,
                         slots: slots.clone(),
                         names: names.clone(),
                         pattern_text: self.pattern.clone(),
@@ -647,6 +857,31 @@ fn py_bytes<'a>(text: &'a Bound<'_, PyAny>) -> Option<&'a [u8]> {
     text.cast::<PyBytes>().ok().map(|raw| raw.as_bytes())
 }
 
+/// Build a `PyMatch` for a bytes subject.
+fn bytes_match(
+    py: Python<'_>,
+    raw: &[u8],
+    slots: Vec<usize>,
+    names: &[(String, usize)],
+    pattern_text: &str,
+    flags: u32,
+) -> PyResult<Py<PyMatch>> {
+    Py::new(
+        py,
+        PyMatch {
+            text: PyString::new(py, "").unbind(),
+            raw: raw.to_vec(),
+            bytes: true,
+            slots,
+            names: names.to_vec(),
+            pattern_text: pattern_text.to_string(),
+            flags,
+            pos: 0,
+            endpos: raw.len(),
+        },
+    )
+}
+
 fn py_ucs<'a>(text: &'a Bound<'_, PyString>) -> PyResult<Ucs<'a>> {
     let ptr = text.as_ptr();
     unsafe {
@@ -756,8 +991,8 @@ fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<PyPattern> {
     ))
 }
 
-fn compile_with(flags: u32, pattern: &str) -> PyResult<PyPattern> {
-    PyPattern::with_flags(pattern, flags)
+fn compile_with(flags: u32, pattern: &Bound<'_, PyAny>) -> PyResult<PyPattern> {
+    compile(pattern, flags)
 }
 
 macro_rules! module_fn {
@@ -766,8 +1001,8 @@ macro_rules! module_fn {
         #[pyo3(name = $pyname, signature = (pattern, text, flags = 0))]
         fn $name(
             py: Python<'_>,
-            pattern: &str,
-            text: &Bound<'_, PyString>,
+            pattern: &Bound<'_, PyAny>,
+            text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<Option<Py<PyMatch>>> {
             compile_with(flags, pattern)?.$method(py, text)
@@ -781,8 +1016,8 @@ macro_rules! module_iter_fn {
         #[pyo3(name = $pyname, signature = (pattern, text, flags = 0))]
         fn $name(
             py: Python<'_>,
-            pattern: &str,
-            text: &Bound<'_, PyString>,
+            pattern: &Bound<'_, PyAny>,
+            text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<PyFindIter> {
             compile_with(flags, pattern)?.finditer(py, text)
@@ -799,8 +1034,8 @@ module_iter_fn!(finditer, "finditer");
 #[pyo3(signature = (pattern, text, flags = 0))]
 fn findall(
     py: Python<'_>,
-    pattern: &str,
-    text: &Bound<'_, PyString>,
+    pattern: &Bound<'_, PyAny>,
+    text: &Bound<'_, PyAny>,
     flags: u32,
 ) -> PyResult<Py<PyList>> {
     compile_with(flags, pattern)?.findall(py, text)
@@ -810,12 +1045,12 @@ fn findall(
 #[pyo3(signature = (pattern, repl, text, count = 0, flags = 0))]
 fn sub(
     py: Python<'_>,
-    pattern: &str,
+    pattern: &Bound<'_, PyAny>,
     repl: &Bound<'_, PyAny>,
-    text: &Bound<'_, PyString>,
+    text: &Bound<'_, PyAny>,
     count: usize,
     flags: u32,
-) -> PyResult<Py<PyString>> {
+) -> PyResult<Py<PyAny>> {
     compile_with(flags, pattern)?.sub(py, repl, text, count)
 }
 
@@ -823,12 +1058,12 @@ fn sub(
 #[pyo3(signature = (pattern, repl, text, count = 0, flags = 0))]
 fn subn(
     py: Python<'_>,
-    pattern: &str,
+    pattern: &Bound<'_, PyAny>,
     repl: &Bound<'_, PyAny>,
-    text: &Bound<'_, PyString>,
+    text: &Bound<'_, PyAny>,
     count: usize,
     flags: u32,
-) -> PyResult<(Py<PyString>, usize)> {
+) -> PyResult<(Py<PyAny>, usize)> {
     compile_with(flags, pattern)?.subn(py, repl, text, count)
 }
 
@@ -836,8 +1071,8 @@ fn subn(
 #[pyo3(signature = (pattern, text, maxsplit = 0, flags = 0))]
 fn split(
     py: Python<'_>,
-    pattern: &str,
-    text: &Bound<'_, PyString>,
+    pattern: &Bound<'_, PyAny>,
+    text: &Bound<'_, PyAny>,
     maxsplit: isize,
     flags: u32,
 ) -> PyResult<Py<PyList>> {
@@ -897,7 +1132,20 @@ impl PyScanner {
 
 /// Escape a string the way CPython's `re.escape` does.
 #[pyfunction]
-fn escape(text: &str) -> String {
+fn escape<'py>(py: Python<'py>, text: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if let Ok(raw) = text.cast::<PyBytes>() {
+        let escaped: Vec<u8> = escape_str(&String::from_utf8_lossy(raw.as_bytes())).into_bytes();
+        return Ok(PyBytes::new(py, &escaped).into_any().unbind());
+    }
+    let text = text
+        .cast::<PyString>()
+        .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
+    Ok(PyString::new(py, &escape_str(&text.to_cow()?))
+        .into_any()
+        .unbind())
+}
+
+fn escape_str(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         let special = matches!(
@@ -942,6 +1190,9 @@ fn purge() {}
 #[pyclass(name = "Match", module = "unirex")]
 pub struct PyMatch {
     text: Py<PyString>,
+    /// Raw subject when the match came from bytes.
+    raw: Vec<u8>,
+    bytes: bool,
     slots: Vec<usize>,
     names: Vec<(String, usize)>,
     pattern_text: String,
@@ -977,6 +1228,20 @@ fn resolve_index(names: &[(String, usize)], index: Option<&Bound<'_, PyAny>>) ->
 }
 
 impl PyMatch {
+    /// One group as `str` or `bytes`, depending on the subject type.
+    fn value<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Option<Py<PyAny>>> {
+        let Some((lo, hi)) = self.span_of(index) else {
+            return Ok(None);
+        };
+        if self.bytes {
+            return Ok(Some(
+                PyBytes::new(py, &self.raw[lo..hi]).into_any().unbind(),
+            ));
+        }
+        let text = self.text.bind(py);
+        substring(py, text, lo, hi).map(|s| Some(s.unbind().into_any()))
+    }
+
     fn span_of(&self, index: usize) -> Option<(usize, usize)> {
         let lo = *self.slots.get(2 * index)?;
         let hi = *self.slots.get(2 * index + 1)?;
@@ -1017,23 +1282,16 @@ impl PyMatch {
         &self,
         py: Python<'_>,
         index: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Option<Py<PyString>>> {
+    ) -> PyResult<Option<Py<PyAny>>> {
         let index = resolve_index(&self.names, index)?;
-        let Some((start, end)) = self.span_of(index) else {
-            return Ok(None);
-        };
-        substring(py, self.text.bind(py), start, end).map(|s| Some(s.unbind()))
+        self.value(py, index)
     }
 
     fn groups<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
         let count = self.slots.len() / 2;
-        let mut items: Vec<Option<Py<PyString>>> = Vec::with_capacity(count.saturating_sub(1));
+        let mut items: Vec<Option<Py<PyAny>>> = Vec::with_capacity(count.saturating_sub(1));
         for index in 1..count {
-            let value = match self.span_of(index) {
-                Some((start, end)) => Some(substring(py, self.text.bind(py), start, end)?.unbind()),
-                None => None,
-            };
-            items.push(value);
+            items.push(self.value(py, index)?);
         }
         Ok(PyTuple::new(py, items)?.unbind())
     }
@@ -1041,11 +1299,7 @@ impl PyMatch {
     fn groupdict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let dict = PyDict::new(py);
         for (name, index) in &self.names {
-            let value = match self.span_of(*index) {
-                Some((start, end)) => Some(substring(py, self.text.bind(py), start, end)?.unbind()),
-                None => None,
-            };
-            dict.set_item(name, value)?;
+            dict.set_item(name, self.value(py, *index)?)?;
         }
         Ok(dict)
     }
@@ -1093,19 +1347,24 @@ impl PyMatch {
     }
 
     /// `m[index]` is `m.group(index)`, as in `re`.
-    fn __getitem__(
-        &self,
-        py: Python<'_>,
-        index: &Bound<'_, PyAny>,
-    ) -> PyResult<Option<Py<PyString>>> {
+    fn __getitem__(&self, py: Python<'_>, index: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
         self.group(py, Some(index))
     }
 
     /// Expand `\1` and `\g<name>` references against this match.
-    fn expand(&self, py: Python<'_>, template: &str) -> PyResult<Py<PyString>> {
+    fn expand<'py>(&self, py: Python<'py>, template: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        if self.bytes {
+            let template: &[u8] = template.extract()?;
+            let text: String = template.iter().map(|&byte| byte as char).collect();
+            let hay: String = self.raw.iter().map(|&byte| byte as char).collect();
+            let expanded = expand_replacement(&text, &hay, &self.slots, &self.names);
+            let raw: Vec<u8> = expanded.chars().map(|ch| ch as u8).collect();
+            return Ok(PyBytes::new(py, &raw).into_any().unbind());
+        }
         let hay = self.text.bind(py).to_cow()?.into_owned();
-        let expanded = expand_replacement(template, &hay, &self.slots, &self.names);
-        Ok(PyString::new(py, &expanded).unbind())
+        let template = template.extract::<String>()?;
+        let expanded = expand_replacement(&template, &hay, &self.slots, &self.names);
+        Ok(PyString::new(py, &expanded).into_any().unbind())
     }
 
     fn __repr__(&self) -> String {
@@ -1123,6 +1382,8 @@ impl PyMatch {
 #[pyclass(name = "FindIter", module = "unirex")]
 pub struct PyFindIter {
     text: Py<PyString>,
+    raw: Vec<u8>,
+    bytes: bool,
     matches: Vec<Vec<usize>>,
     position: usize,
     names: Vec<(String, usize)>,
@@ -1145,6 +1406,8 @@ impl PyFindIter {
                 py,
                 PyMatch {
                     text: slf.text.clone_ref(py),
+                    raw: slf.raw.clone(),
+                    bytes: slf.bytes,
                     slots,
                     names: slf.names.clone(),
                     pattern_text: slf.pattern_text.clone(),
