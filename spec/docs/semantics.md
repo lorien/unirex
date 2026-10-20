@@ -159,6 +159,14 @@ There is therefore no Unicode-version dependence until milestone 2 adds
 Python class tables. Those tables must be generated for a documented CPython
 Unicode version, and any version-dependent divergence must be recorded here.
 
+## API differences
+
+- `search`, `match`, and `fullmatch` accept `pos` and `endpos`. The window is
+  materialised as a substring, so `\A` and `^` treat its start as the beginning
+  of the subject; CPython keeps `\A` anchored to the real string start.
+- Patterns are picklable and copyable through `__reduce__`, and support weak
+  references. `compile(compiled_pattern)` returns an equivalent pattern.
+
 ## Divergences found by the differential suite
 
 - `\B` never matches in an empty haystack, matching CPython 3.12 and later.

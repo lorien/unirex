@@ -30,7 +30,7 @@ thread_local! {
 }
 
 /// A compiled pattern exposed to Python.
-#[pyclass(name = "Pattern", module = "unirex")]
+#[pyclass(name = "Pattern", module = "unirex", weakref)]
 pub struct PyPattern {
     inner: CorePattern,
     /// Stable identity used to match a thread-local scratch to this pattern.
@@ -112,6 +112,20 @@ impl PyPattern {
     #[new]
     fn new(pattern: &str) -> PyResult<PyPattern> {
         PyPattern::with_flags(pattern, 0)
+    }
+
+    /// Support `pickle` and `copy` by rebuilding from the source pattern.
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        let module = py.import("unirex")?;
+        let compile = module.getattr("compile")?;
+        let source: Bound<'_, PyAny> = if self.bytes {
+            let raw: Vec<u8> = self.pattern.chars().map(|ch| ch as u8).collect();
+            PyBytes::new(py, &raw).into_any()
+        } else {
+            PyString::new(py, &self.pattern).into_any()
+        };
+        let args = PyTuple::new(py, [source, self.flags.into_pyobject(py)?.into_any()])?;
+        PyTuple::new(py, [compile, args.into_any()])
     }
 
     /// A cursor over `string`, as in `re.Pattern.scanner`.
@@ -281,8 +295,21 @@ impl PyPattern {
             .transpose()
     }
 
-    /// Return the first match at or after position zero.
-    fn search(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+    /// Return the first match at or after `pos`, before `endpos`.
+    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        if pos != 0 || endpos.is_some() {
+            if py_bytes(text).is_some() {
+                return Ok(self.bytes_search(py, text, pos, endpos, false, false));
+            }
+            return self.windowed(py, text, pos, endpos, false, false);
+        }
         if let Some(raw) = py_bytes(text) {
             return self.bytes_match_with_position(py, raw, false, false);
         }
@@ -294,9 +321,22 @@ impl PyPattern {
 
     /// Match only at the start of `text`.
     #[pyo3(name = "match")]
-    fn match_(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    fn match_(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<Option<Py<PyMatch>>> {
         if let Some(raw) = py_bytes(text) {
+            if pos != 0 || endpos.is_some() {
+                return Ok(self.bytes_search(py, text, pos, endpos, true, false));
+            }
             return self.bytes_match_with_position(py, raw, true, false);
+        }
+        if pos != 0 || endpos.is_some() {
+            return self.windowed(py, text, pos, endpos, true, false);
         }
         let text = text
             .cast::<PyString>()
@@ -305,7 +345,20 @@ impl PyPattern {
     }
 
     /// Match the whole of `text`.
-    fn fullmatch(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyMatch>>> {
+    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    fn fullmatch(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        if pos != 0 || endpos.is_some() {
+            if py_bytes(text).is_some() {
+                return Ok(self.bytes_search(py, text, pos, endpos, true, true));
+            }
+            return self.windowed(py, text, pos, endpos, true, true);
+        }
         if let Some(raw) = py_bytes(text) {
             return self.bytes_match_with_position(py, raw, true, true);
         }
@@ -313,6 +366,72 @@ impl PyPattern {
             .cast::<PyString>()
             .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.match_with_position(py, text, true, true)
+    }
+
+    /// Windowed search for both subject types.
+    fn bytes_search(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+        anchored_start: bool,
+        anchored_end: bool,
+    ) -> Option<Py<PyMatch>> {
+        let raw = py_bytes(text)?;
+        let endpos = endpos.unwrap_or(raw.len()).min(raw.len());
+        if pos > endpos {
+            return None;
+        }
+        let window = &raw[pos..endpos];
+        let found = self
+            .bytes_match_with_position(py, window, anchored_start, anchored_end)
+            .ok()??;
+        {
+            let mut inner = found.borrow_mut(py);
+            shift_slots(&mut inner.slots, pos);
+            inner.raw = raw.to_vec();
+            inner.pos = pos;
+            inner.endpos = endpos;
+        }
+        Some(found)
+    }
+
+    /// Run an anchored or unanchored search inside `pos..endpos`.
+    ///
+    /// The window is materialised as a substring, so `\A` and `^` treat its
+    /// start as the beginning of the subject. CPython keeps `\A` anchored to
+    /// the real start; that difference is recorded in `semantics.md`.
+    fn windowed(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+        anchored_start: bool,
+        anchored_end: bool,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        let text = text.cast::<PyString>().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("windowed search needs a str subject")
+        })?;
+        let hay = text.to_cow()?.into_owned();
+        let total = hay.chars().count();
+        let endpos = endpos.unwrap_or(total).min(total);
+        if pos > endpos {
+            return Ok(None);
+        }
+        let window: String = hay.chars().skip(pos).take(endpos - pos).collect();
+        let slice = PyString::new(py, &window);
+        let found = self.match_with_position(py, &slice, anchored_start, anchored_end)?;
+        let Some(found) = found else { return Ok(None) };
+        {
+            let mut inner = found.borrow_mut(py);
+            shift_slots(&mut inner.slots, pos);
+            inner.text = text.clone().unbind();
+            inner.pos = pos;
+            inner.endpos = endpos;
+        }
+        Ok(Some(found))
     }
 
     /// Bytes counterpart of `match_with_position`.
@@ -977,6 +1096,11 @@ fn flags_prefix(flags: u32) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (pattern, flags = 0))]
 fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<PyPattern> {
+    if let Ok(existing) = pattern.extract::<PyRef<'_, PyPattern>>() {
+        if flags == 0 {
+            return PyPattern::build(&existing.pattern, existing.flags, existing.bytes);
+        }
+    }
     if let Ok(text) = pattern.cast::<PyString>() {
         return PyPattern::with_flags(&text.to_cow()?, flags);
     }
@@ -1005,7 +1129,7 @@ macro_rules! module_fn {
             text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<Option<Py<PyMatch>>> {
-            compile_with(flags, pattern)?.$method(py, text)
+            compile_with(flags, pattern)?.$method(py, text, 0, None)
         }
     };
 }
@@ -1101,7 +1225,7 @@ impl PyScanner {
             .take(self.endpos.saturating_sub(self.position))
             .collect();
         let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
-        let Some(found) = pattern.match_(py, &PyString::new(py, &tail))? else {
+        let Some(found) = pattern.match_(py, &PyString::new(py, &tail).into_any(), 0, None)? else {
             return Ok(None);
         };
         let bound = found.bind(py);
@@ -1120,7 +1244,7 @@ impl PyScanner {
             .take(self.endpos.saturating_sub(self.position))
             .collect();
         let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
-        let Some(found) = pattern.search(py, &PyString::new(py, &tail))? else {
+        let Some(found) = pattern.search(py, &PyString::new(py, &tail).into_any(), 0, None)? else {
             return Ok(None);
         };
         let bound = found.bind(py);
@@ -1187,7 +1311,7 @@ fn escape_str(text: &str) -> String {
 fn purge() {}
 
 /// A single match with its capture spans.
-#[pyclass(name = "Match", module = "unirex")]
+#[pyclass(name = "Match", module = "unirex", weakref)]
 pub struct PyMatch {
     text: Py<PyString>,
     /// Raw subject when the match came from bytes.
@@ -1277,14 +1401,31 @@ impl PyMatch {
         Ok(self.span_of(index).map_or(-1, |(_, end)| end as isize))
     }
 
-    #[pyo3(signature = (index = None))]
-    fn group(
-        &self,
-        py: Python<'_>,
-        index: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        let index = resolve_index(&self.names, index)?;
-        self.value(py, index)
+    #[pyo3(signature = (*indices))]
+    fn group(&self, py: Python<'_>, indices: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+        if indices.is_empty() {
+            return Ok(match self.value(py, 0)? {
+                Some(value) => value,
+                None => py.None(),
+            });
+        }
+        if indices.len() == 1 {
+            let index = resolve_index(&self.names, Some(indices.get_item(0)?.as_any()))?;
+            return Ok(match self.value(py, index)? {
+                Some(value) => value,
+                None => py.None(),
+            });
+        }
+        let mut values: Vec<Py<PyAny>> = Vec::with_capacity(indices.len());
+        for position in 0..indices.len() {
+            let item = indices.get_item(position)?;
+            let index = resolve_index(&self.names, Some(item.as_any()))?;
+            values.push(match self.value(py, index)? {
+                Some(value) => value,
+                None => py.None(),
+            });
+        }
+        Ok(PyTuple::new(py, values)?.into_any().unbind())
     }
 
     fn groups<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
@@ -1347,8 +1488,9 @@ impl PyMatch {
     }
 
     /// `m[index]` is `m.group(index)`, as in `re`.
-    fn __getitem__(&self, py: Python<'_>, index: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
-        self.group(py, Some(index))
+    fn __getitem__(&self, py: Python<'_>, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let single = PyTuple::new(py, [index])?;
+        self.group(py, &single)
     }
 
     /// Expand `\1` and `\g<name>` references against this match.
@@ -1485,6 +1627,15 @@ fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ASCII", FLAG_ASCII)?;
     m.add("A", FLAG_ASCII)?;
     Ok(())
+}
+
+/// Shift every capture slot by `offset`, leaving unmatched slots alone.
+fn shift_slots(slots: &mut [usize], offset: usize) {
+    for value in slots.iter_mut() {
+        if *value != usize::MAX {
+            *value += offset;
+        }
+    }
 }
 
 /// Character slice of `hay` between two code-point offsets.

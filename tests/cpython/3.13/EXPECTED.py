@@ -9,7 +9,7 @@ EXPECTED = {
     "DebugTests.test_debug_flag": "unsupported: DEBUG flag is rejected",
     "DebugTests.test_possesive_repeat": "unsupported: DEBUG flag is rejected",
     "DebugTests.test_possesive_repeat_one": "unsupported: DEBUG flag is rejected",
-    "ExternalTests.test_re_benchmarks": "todo: pos/endpos parameters are not accepted yet",
+    "ExternalTests.test_re_benchmarks": "unsupported: pattern backreferences are rejected",
     "ExternalTests.test_re_tests": "unsupported: LOCALE flag is rejected",
     "ImplementationTest.test_immutable": "todo: validation that re performs is missing",
     "ImplementationTest.test_overlap_table": "todo: API surface missing",
@@ -123,7 +123,6 @@ EXPECTED = {
     "ReTests.test_symbolic_groups_errors": "unsupported: syntax the parser rejects",
     "ReTests.test_symbolic_refs": "unsupported: named backreferences are rejected",
     "ReTests.test_symbolic_refs_errors": "todo: validation that re performs is missing",
-    "ReTests.test_weakref": "todo: Pattern does not support weak references",
     "ReTests.test_word_boundaries": "unsupported: ASCII flag is rejected; classes follow CPython's Unicode tables",
     "ReTests.test_zerowidth": "unsupported: syntax the parser rejects",
 }
