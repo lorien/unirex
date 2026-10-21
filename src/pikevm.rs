@@ -42,7 +42,7 @@ pub(crate) fn find<U: Unit>(
     search_start: usize,
     retry_nonempty_at: Option<usize>,
 ) -> Option<Match> {
-    if prog.first.is_some() && !scratch.dfa_disabled {
+    if prog.first.is_some() && !scratch.dfa_disabled && !prog.anchored_start {
         if scratch.dfa.is_none() {
             match dfa::Cache::new(prog) {
                 Some(cache) => scratch.dfa = Some(cache),
@@ -91,6 +91,15 @@ fn find_pike<U: Unit>(
         return None;
     }
 
+    // A start-anchored pattern can only match at the first position, so an
+    // advancing search gives up immediately and a fresh one never restarts
+    // after its first attempt. This is what makes `re.search('\\Ay', s)` over
+    // a 10M-unit haystack finish in constant time.
+    let anchored = prog.anchored_start;
+    if anchored && search_start > 0 {
+        return None;
+    }
+
     let first = prog.first.as_ref().and_then(|first| first.scan::<U>());
     let mut matched: Option<Match> = None;
     let mut pos = search_start;
@@ -99,15 +108,22 @@ fn find_pike<U: Unit>(
         nlist.clear();
 
         if clist.is_empty() && matched.is_none() {
-            if let Some(first) = &first {
-                match first.find_next(hay, pos) {
-                    Some(next) => pos = next,
-                    None => break,
+            if anchored && pos > search_start {
+                // Threads from the single anchored attempt have died without
+                // a match; there is nothing to restart.
+                break;
+            }
+            if !anchored {
+                if let Some(first) = &first {
+                    match first.find_next(hay, pos) {
+                        Some(next) => pos = next,
+                        None => break,
+                    }
                 }
             }
         }
 
-        if matched.is_none() {
+        if matched.is_none() && (!anchored || pos == search_start) {
             add_thread(clist, stack, prog, prog.start, pos, pos, hay);
         }
 

@@ -41,10 +41,18 @@ Accepted:
   ASCII-only, and every result, group, and replacement is `bytes`.
   `compile`, `search`, `match`, `fullmatch`, `findall`, `finditer`, `sub`,
   `subn`, `split`, `escape`, and the `Pattern` methods all accept both.
-- Flags `i`, `m`, and `s`, global at the start of the pattern or scoped as
+- Flags `i`, `m`, `s`, `x`, global at the start of the pattern or scoped as
   `(?i:...)`. Case folding uses tables generated from CPython `re.IGNORECASE`,
   so special pairs such as `k`/`\u212A`, `s`/`\u017F`, and `i`/`\u0130`
-  behave like CPython.
+  behave like CPython. Global inline flags follow CPython 3.11+ placement
+  exactly, through a textual pre-scan that runs before the AST parse: a
+  `(?flags)` group is legal only in the pattern's leading run, where nothing
+  but other global flag groups and, under verbose mode, stripped whitespace
+  and `#` comments precedes it. A flag group inside any group, after any
+  consuming element, or after a `|` is rejected with CPython's `global flags
+  not at the start of the expression` and its position, including inside
+  conditional groups. A scoped group `(?i:...)` is legal anywhere, even with
+  an empty body.
 - Lazy repetition `*?`, `+?`, `??`, and `{n,m}?`.
 - Named groups `(?P<name>...)`, exposed through the Python `Match` API and
   `Pattern::capture_names`.
@@ -63,6 +71,21 @@ Rejected with a positioned error:
 - Repetition of an assertion, for example `^*` or `\A*`.
 - Backreferences, lookaround, atomic groups, possessive quantifiers,
   conditionals, and recursion.
+
+Possessive quantifiers parse as stacked repetition and are rejected with
+`multiple repeat`, whose position counts one lazy or possessive modifier
+attached to the innermost operator, as in CPython (`x**` at 2, `x*+?` at 3,
+`x{1,2}+?` at 7).
+
+Conditional groups `(?(ref)yes|no)` are unsupported, but a pre-scan rejects
+invalid ones with CPython's own diagnostics and positions before the AST
+parse rejects the construct: `bad group number` for `(?(0)`, `invalid group
+reference N` for references beyond `_sre.MAXGROUPS` or beyond the pattern's
+group count (checked after the scan, as CPython checks after the parse),
+`bad character in group name '...'` and `unknown group name '...'` for named
+references, and `conditional backref with more than two branches` for a
+third branch. Valid conditionals still fail compilation as unsupported
+syntax.
 
 ## Matching rules
 
@@ -166,6 +189,36 @@ Unicode version, and any version-dependent divergence must be recorded here.
   of the subject; CPython keeps `\A` anchored to the real string start.
 - Patterns are picklable and copyable through `__reduce__`, and support weak
   references. `compile(compiled_pattern)` returns an equivalent pattern.
+- Patterns compare by value: `__eq__` and `__hash__` use the source pattern,
+  its `bytes`ness, and the flags, so equal patterns compiled separately are
+  equal and hash alike, as in `re`. Ordering raises `TypeError`. The
+  comparison never mixes `str` and `bytes` values, so it stays silent with
+  `python -bb`.
+- Matches are immutable views: `copy.copy(m) is m` and
+  `copy.deepcopy(m) is m`, as in CPython.
+- Buffer-protocol subjects (`bytearray`, `memoryview`) are accepted wherever
+  a bytes pattern takes a subject. A `Match` keeps the original object and
+  reads groups live at call time, clamping spans to the current length, so
+  mutating the `bytearray` after the search is reflected in `group()`, as in
+  `re`. `findall`, `split`, `sub`, and `subn` copy the buffer once and their
+  results are `bytes`.
+- Replacement templates follow CPython's `parse_template`: `\g<name>`
+  references, one- and two-digit group references, three-digit octal escapes
+  and `\0` octal escapes, the eight simple escapes, and literal unknown
+  non-letter escapes. Errors are `unirex.error` with CPython's message and
+  `pos` (`invalid group reference N` at the first digit or the `\g<` name,
+  `octal escape value \400 outside of range 0-0o377` and `bad escape` at the
+  backslash); an unknown group name raises `IndexError`. The template is
+  validated before matching, so a bad template errors even on a subject
+  with no matches.
+- `Pattern.scanner(string, pos, endpos)` returns a cursor whose matches
+  carry absolute spans and honor the `pos`/`endpos` window. The module-level
+  `Scanner(lexicon, flags)` class builds CPython's compound-pattern scanner
+  with `scan(string)` returning `(tokens, remainder)`.
+- A start-anchored pattern (every accepting run crosses a start-of-text
+  assertion) is searched only at the first position: `search(r'\Ay', s)` and
+  `search(r'^y', s)` over a 10M-unit haystack finish in constant time, as
+  CPython's optimized path does. See ADR-0019.
 
 ## Divergences found by the differential suite
 

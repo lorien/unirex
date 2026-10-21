@@ -82,13 +82,18 @@ against CPython `re`.
    interpreter; it ignores the existing ledger while doing so, otherwise the
    skipped tests would hide their own failures.
 
-   The 3.13.5 ledger holds 121 of 165 test methods: 56 `unsupported`
-   (constructs rejected by decision), 57 `todo`, 4 `by-design`, 4 `harness`.
-   The neighbouring `rurex` project runs the same vendored tag and ledgers 89,
-   so 32 methods are ours alone to close. The largest named groups are parser
-   rejections (31), result differences (20), and missing validation (9); the
-   `pos`/`endpos` parameters and keyword arguments are the most common concrete
-   cause behind subtests that fail.
+   The 3.13.5 ledger holds 93 of 165 test methods: 57 `unsupported`
+   (constructs rejected by decision), 30 `todo`, 2 `by-design`, 4 `harness`.
+   The neighbouring `rurex` project runs the same vendored tag and ledgers
+   89; of the nine entries ours alone, the largest real groups are the
+   possessive-quantifier pair (rejected as stacked repetition by decision)
+   and the `subTest`-level message parity in `test_backref_group_name_in_exception`
+   and `test_group_name_in_exception`; the rest are harness entries and
+   locale tests that self-skip or depend on LOCALE support. A ledger entry is
+   only removed when the method passes with all of its subtests: pytest
+   reports a unittest method whose `subTest` assertions fail as `PASSED` at
+   method level, so a naive "currently passing" check overstates the green
+   set.
 15. **Planned follow-ups.** Python `\w`/`\d`/`\s` tables, `\b`/`\B`, `$`,
     flags, captures, and generated UCS-1/2/4 differential suites.
 

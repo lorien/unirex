@@ -79,3 +79,8 @@ Catalog of the documents under `spec/docs/`. Recommended reading order:
   the anchored candidate loop is capped and falls back to the PikeVM, keeping
   search linear instead of quadratic, after a reverse-pass design produced
   wrong leftmost-first spans.
+- [adr/0019-anchored-start-fast-rejection.md](adr/0019-anchored-start-fast-rejection.md)
+  — a compile-time instruction-level fixpoint marks programs whose every
+  accepting run crosses a start assertion; unanchored searches over such
+  programs try only the first position, making `search(r'\Ay', s)` constant
+  time.

@@ -20,6 +20,8 @@ const MAX_CLASSES: usize = 10_000;
 const MAX_CLASS_RANGES: usize = 100_000;
 const MAX_GROUPS: usize = 1_000;
 const MAX_CODEPOINT: u32 = 0x10FFFF;
+/// `_sre.MAXGROUPS`: group references at or above this value are rejected.
+const MAX_GROUP_REFERENCE: u64 = 1_073_741_823;
 
 /// A compiled instruction program.
 pub(crate) struct Program {
@@ -36,6 +38,9 @@ pub(crate) struct Program {
     pub(crate) names: Vec<(String, usize)>,
     /// Bytes semantics: ASCII classes and ASCII-only case folding.
     pub(crate) ascii: bool,
+    /// Every accepting run passes a start-of-haystack assertion, so an
+    /// unanchored search only has to try the first position.
+    pub(crate) anchored_start: bool,
 }
 
 /// A conservative set of code units that can begin a match.
@@ -242,6 +247,7 @@ fn compile_with_ascii(pattern: &str, ascii: bool) -> Result<Program, Error> {
 
     let normalized = normalize_end_anchor(pattern);
     validate_python_escapes(&normalized)?;
+    prevalidate(&normalized, ascii)?;
     let mut parser = ast::parse::ParserBuilder::new().octal(true).build();
     let ast = parser.parse(&normalized)?;
     let mut compiler = Compiler::new(ascii);
@@ -352,8 +358,6 @@ struct Flags {
 
 struct Compiler {
     ascii: bool,
-    /// Nesting depth of groups, used to reject global flags mid-expression.
-    depth: usize,
     flags: Flags,
     /// Inside a `#` comment while verbose mode is active.
     in_comment: bool,
@@ -371,7 +375,6 @@ impl Compiler {
     fn new(ascii: bool) -> Compiler {
         Compiler {
             ascii,
-            depth: 0,
             flags: Flags::default(),
             in_comment: false,
             insts: Vec::new(),
@@ -392,6 +395,7 @@ impl Compiler {
         }
         self.insts.push(Inst::Match);
         let first = first_set(&self.insts, &self.classes, 0);
+        let anchored_start = anchored_start(&self.insts);
         Ok(Program {
             insts: self.insts,
             classes: self.classes,
@@ -401,6 +405,7 @@ impl Compiler {
             uses_context: self.uses_context,
             names: self.names,
             ascii: self.ascii,
+            anchored_start,
         })
     }
 
@@ -499,12 +504,8 @@ impl Compiler {
         match ast {
             Ast::Empty(_) => Ok(()),
             Ast::Flags(flags) => {
-                if !self.insts.is_empty() && !self.flags.verbose && flags.span.start.offset != 0 {
-                    return Err(unsupported(
-                        "global flags not at the start of the expression",
-                        &flags.span,
-                    ));
-                }
+                // Placement was validated by `prevalidate`; only the flag
+                // letters themselves are checked here.
                 self.apply_flags(&flags.flags.items, &flags.span)?;
                 Ok(())
             }
@@ -636,10 +637,7 @@ impl Compiler {
     }
 
     fn compile_group(&mut self, group: &ast::Group) -> Result<(), Error> {
-        self.depth += 1;
-        let result = self.compile_group_inner(group);
-        self.depth -= 1;
-        result
+        self.compile_group_inner(group)
     }
 
     fn compile_group_inner(&mut self, group: &ast::Group) -> Result<(), Error> {
@@ -662,16 +660,9 @@ impl Compiler {
                 if flags.items.is_empty() {
                     return self.compile(&group.ast);
                 }
-                if matches!(group.ast.as_ref(), Ast::Empty(_))
-                    && !self.flags.verbose
-                    && (self.depth > 1 || !self.insts.is_empty())
-                {
-                    // `(?i)` with no body is a global flag form, not `(?i:...)`.
-                    return Err(unsupported(
-                        "global flags not at the start of the expression",
-                        &group.span,
-                    ));
-                }
+                // `(?i:...)` is a scoped flag group, legal anywhere; the
+                // placement of the global `(?i)` form is checked by
+                // `prevalidate`.
                 let saved = self.flags;
                 self.apply_flags(&flags.items, &group.span)?;
                 let result = self.compile(&group.ast);
@@ -711,12 +702,38 @@ impl Compiler {
     }
 
     fn compile_repetition(&mut self, repetition: &ast::Repetition) -> Result<(), Error> {
-        if let Ast::Repetition(inner) = repetition.ast.as_ref() {
-            // CPython points at the operator that follows the inner repetition.
-            let end = inner.span.end;
+        if matches!(repetition.ast.as_ref(), Ast::Repetition(_)) {
+            // Stacked repetition. CPython reports the position just past the
+            // innermost operator plus one adjacent lazy or possessive
+            // modifier: `x**` at 2, `x*+?` at 3, `x{1,2}+?` at 7.
+            // The chain includes the outermost operator itself: regex-syntax
+            // merges a lazy marker into an operator's span, so a lazy
+            // innermost op already accounts for CPython's one modifier. A
+            // greedy innermost op absorbs an adjacent `?` or `+` parent
+            // operator, which is CPython's possessive modifier.
+            let mut ops: Vec<(&ast::RepetitionOp, bool)> =
+                vec![(&repetition.op, repetition.greedy)];
+            let mut node = repetition.ast.as_ref();
+            while let Ast::Repetition(inner) = node {
+                ops.push((&inner.op, inner.greedy));
+                node = inner.ast.as_ref();
+            }
+            let (innermost, innermost_greedy) = *ops.last().expect("nested repetition");
+            let mut end = innermost.span.end.offset;
+            if innermost_greedy && ops.len() >= 2 {
+                let (parent, _) = ops[ops.len() - 2];
+                let modifier = matches!(
+                    parent.kind,
+                    RepetitionKind::ZeroOrOne | RepetitionKind::OneOrMore
+                );
+                if modifier && parent.span.start.offset == end {
+                    end += 1;
+                }
+            }
+            let position = ast::Position::new(end, 1, 1);
             return Err(unsupported(
                 "multiple repeat",
-                &Span::new(end, ast::Position::new(end.offset, end.line, end.column)),
+                &Span::new(position, position),
             ));
         }
         if matches!(repetition.ast.as_ref(), Ast::Assertion(_)) {
@@ -1084,10 +1101,376 @@ fn check_literal(lit: &ast::Literal) -> Result<(), Error> {
     Ok(())
 }
 
-fn unsupported(what: &'static str, span: &Span) -> Error {
+fn unsupported(what: &str, span: &Span) -> Error {
     Error::Unsupported {
-        what,
+        what: what.to_string(),
         offset: span.start.offset,
+    }
+}
+/// Every accepting run passes a start-of-haystack assertion, so an
+/// unanchored search only needs to try the first position.
+///
+/// `A[pc]` holds when every path from `pc` to `Match` crosses
+/// `Assert(Start)`. Paths through a start assertion are anchored no matter
+/// what follows, consuming instructions inherit their successor's verdict,
+/// and splits require it on both branches. The fixpoint starts from `false`
+/// and only grows, so a few sweeps over the program settle it.
+fn anchored_start(insts: &[Inst]) -> bool {
+    let mut anchored = vec![false; insts.len()];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for pc in 0..insts.len() {
+            if anchored[pc] {
+                continue;
+            }
+            let value = match insts[pc] {
+                Inst::Match => continue,
+                Inst::Assert(AssertKind::Start) => true,
+                Inst::Char(_) | Inst::Class(_) | Inst::Save(_) | Inst::Assert(_) => {
+                    anchored[pc + 1]
+                }
+                Inst::Jump(target) => anchored[target],
+                Inst::Split(a, b) => anchored[a] && anchored[b],
+            };
+            if value {
+                anchored[pc] = true;
+                changed = true;
+            }
+        }
+    }
+    anchored.first().copied().unwrap_or(false)
+}
+
+/// Pre-validate the constructs `regex-syntax` cannot parse far enough to
+/// report CPython's diagnostics: conditional groups `(?(N)...)` and the
+/// placement of global inline flags. The scan mirrors CPython's single
+/// left-to-right parse pass, so when two errors compete the earlier one in
+/// the pattern wins, as in CPython. Patterns the scan accepts may still be
+/// rejected later; the scan only rejects patterns CPython rejects.
+fn prevalidate(pattern: &str, bytes: bool) -> Result<(), Error> {
+    let chars: Vec<char> = pattern.chars().collect();
+    // The scan works in character indices; errors carry byte offsets like
+    // every other `Error`, so convert on the way out.
+    let to_byte = |char_offset: usize| -> usize {
+        chars[..char_offset.min(chars.len())]
+            .iter()
+            .map(|c| c.len_utf8())
+            .sum()
+    };
+    let mut scan = PreScan {
+        bytes,
+        groups: 0,
+        names: Vec::new(),
+        digit_refs: Vec::new(),
+        verbose: false,
+        consumed: false,
+    };
+    let scanned = (|| -> Result<(), Error> {
+        scan.alternation(&chars, 0, true)?;
+        // CPython validates conditional digit references after the whole
+        // parse; its `state.groups` counts the implicit group 0, so a
+        // reference is valid when it is at most the pattern's group count.
+        for (value, offset) in scan.digit_refs.clone() {
+            if value > scan.groups as u64 {
+                return Err(Error::Unsupported {
+                    what: format!("invalid group reference {value}"),
+                    offset,
+                });
+            }
+        }
+        Ok(())
+    })();
+    match scanned {
+        Ok(()) => Ok(()),
+        Err(Error::Unsupported { what, offset }) => Err(Error::Unsupported {
+            what,
+            offset: to_byte(offset),
+        }),
+        Err(other) => Err(other),
+    }
+}
+
+/// State carried across the regions of one [`prevalidate`] scan.
+struct PreScan {
+    /// The pattern is a `bytes` pattern, so group names are reported
+    /// ascii-escaped, as CPython's bytes tokenizer does.
+    bytes: bool,
+    /// Capture groups opened so far.
+    groups: usize,
+    /// Capture group names opened so far.
+    names: Vec<String>,
+    /// Conditional digit references as `(value, name offset)`, checked after
+    /// the scan against the final group count.
+    digit_refs: Vec<(u64, usize)>,
+    /// Global verbose mode is active, so top-level whitespace and `#`
+    /// comments are stripped and do not consume a leading flag position.
+    verbose: bool,
+    /// Something has consumed the pattern's leading position, so a global
+    /// inline flag is no longer at the start of the expression.
+    consumed: bool,
+}
+
+impl PreScan {
+    /// Scan an alternation of one or more regions, returning the offset of
+    /// the unmatched `)` that closed it, or the end of the pattern.
+    ///
+    /// With `top`, the regions follow the top-level leading-run rules for
+    /// global flags and stripped whitespace; a stray `)` is consumed rather
+    /// than terminating the scan, mirroring CPython's post-parse
+    /// "unbalanced parenthesis" check, which this scan leaves to the parser.
+    fn alternation(&mut self, chars: &[char], mut i: usize, top: bool) -> Result<usize, Error> {
+        loop {
+            i = self.region(chars, i, top)?;
+            if i >= chars.len() {
+                return Ok(i);
+            }
+            match chars[i] {
+                ')' => return Ok(i),
+                '|' => {
+                    i += 1;
+                    self.mark_consumed(top);
+                }
+                _ => unreachable!("a region only stops at ')' or '|'"),
+            }
+        }
+    }
+
+    /// Scan one concatenation region up to an unmatched `)` or `|` that
+    /// ends it, returning that offset.
+    fn region(&mut self, chars: &[char], mut i: usize, top: bool) -> Result<usize, Error> {
+        while i < chars.len() {
+            match chars[i] {
+                '\\' => {
+                    i = (i + 2).min(chars.len());
+                    self.mark_consumed(top);
+                }
+                '[' => {
+                    i = skip_class(chars, i);
+                    self.mark_consumed(top);
+                }
+                '(' => {
+                    if chars.get(i + 1) == Some(&'?') {
+                        match chars.get(i + 2).copied() {
+                            Some('(') => {
+                                i = self.conditional(chars, i)?;
+                                self.mark_consumed(top);
+                            }
+                            Some('#') => {
+                                let Some(close) = chars[i + 3..]
+                                    .iter()
+                                    .position(|&c| c == ')')
+                                    .map(|at| i + 3 + at)
+                                else {
+                                    return Err(pre_error("missing ), unterminated comment", i));
+                                };
+                                i = close + 1;
+                            }
+                            Some('P') if chars.get(i + 3) == Some(&'<') => {
+                                self.groups += 1;
+                                let mut j = i + 4;
+                                while j < chars.len() && chars[j] != '>' {
+                                    j += 1;
+                                }
+                                let name: String =
+                                    chars[i + 4..j.min(chars.len())].iter().collect();
+                                self.names.push(name);
+                                self.mark_consumed(top);
+                                i = self.alternation(chars, j + 1, false)?;
+                                if i >= chars.len() {
+                                    return Ok(i);
+                                }
+                                i += 1;
+                            }
+                            _ => {
+                                if let Some(end) = self.global_flag_group(chars, i) {
+                                    if !top || self.consumed {
+                                        return Err(pre_error(
+                                            "global flags not at the start of the expression",
+                                            i,
+                                        ));
+                                    }
+                                    if chars[i + 2..end].contains(&'x') {
+                                        self.verbose = true;
+                                    }
+                                    i = end + 1;
+                                } else {
+                                    // A scoped flag group `(?i:...)`, `(?:...)`,
+                                    // lookaround, or an unknown extension; its
+                                    // body is scanned as a nested alternation.
+                                    self.mark_consumed(top);
+                                    i = self.alternation(chars, i + 2, false)?;
+                                    if i >= chars.len() {
+                                        return Ok(i);
+                                    }
+                                    i += 1;
+                                }
+                            }
+                        }
+                    } else {
+                        self.groups += 1;
+                        self.mark_consumed(top);
+                        i = self.alternation(chars, i + 1, false)?;
+                        if i >= chars.len() {
+                            return Ok(i);
+                        }
+                        i += 1;
+                    }
+                }
+                ')' | '|' => return Ok(i),
+                '#' if self.verbose => {
+                    i = chars[i..]
+                        .iter()
+                        .position(|&c| c == '\n')
+                        .map(|at| i + at + 1)
+                        .unwrap_or(chars.len());
+                }
+                _ => {
+                    if top && self.verbose && chars[i].is_whitespace() {
+                        i += 1;
+                    } else {
+                        i += 1;
+                        self.mark_consumed(top);
+                    }
+                }
+            }
+        }
+        Ok(chars.len())
+    }
+
+    /// Validate one `(?(ref)yes|no)` group opening at `open`, returning the
+    /// offset just past its closing `)`.
+    fn conditional(&mut self, chars: &[char], open: usize) -> Result<usize, Error> {
+        let name_start = open + 3;
+        let mut close = name_start;
+        while close < chars.len() && chars[close] != ')' {
+            close += 1;
+        }
+        if close >= chars.len() {
+            if name_start >= chars.len() {
+                return Err(pre_error("missing group name", name_start));
+            }
+            return Err(pre_error("missing ), unterminated name", name_start));
+        }
+        let name: String = chars[name_start..close].iter().collect();
+        if name.is_empty() {
+            return Err(pre_error("missing group name", name_start));
+        }
+        if name.chars().all(|c| c.is_ascii_digit()) {
+            match name.parse::<u64>() {
+                Ok(0) => return Err(pre_error("bad group number", name_start)),
+                Ok(value) if value >= MAX_GROUP_REFERENCE => {
+                    return Err(Error::Unsupported {
+                        what: format!("invalid group reference {value}"),
+                        offset: name_start,
+                    });
+                }
+                Ok(value) => self.digit_refs.push((value, name_start)),
+                Err(_) => {
+                    return Err(Error::Unsupported {
+                        what: format!("invalid group reference {name}"),
+                        offset: name_start,
+                    });
+                }
+            }
+        } else {
+            if !is_python_identifier(&name) {
+                return Err(Error::Unsupported {
+                    what: format!(
+                        "bad character in group name {}",
+                        quote_name(&name, self.bytes)
+                    ),
+                    offset: name_start,
+                });
+            }
+            if !self.names.contains(&name) {
+                return Err(Error::Unsupported {
+                    what: format!("unknown group name '{}'", name),
+                    offset: name_start,
+                });
+            }
+        }
+        // A yes branch, then an optional no branch: single regions, so a
+        // third top-level `|` stays visible to this check, as in CPython.
+        let mut i = self.region(chars, close + 1, false)?;
+        if i < chars.len() && chars[i] == '|' {
+            i = self.region(chars, i + 1, false)?;
+            if i < chars.len() && chars[i] == '|' {
+                return Err(pre_error(
+                    "conditional backref with more than two branches",
+                    i,
+                ));
+            }
+        }
+        if i >= chars.len() || chars[i] != ')' {
+            return Err(pre_error("missing ), unterminated subpattern", open));
+        }
+        Ok(i + 1)
+    }
+
+    /// The offset of the `)` closing a global inline flag group at `open`,
+    /// or `None` when the group is scoped `(?i:...)` or an unknown extension.
+    fn global_flag_group(&self, chars: &[char], open: usize) -> Option<usize> {
+        let mut i = open + 2;
+        while i < chars.len() && matches!(chars[i], 'i' | 'm' | 's' | 'x' | 'a' | 'L' | 'u' | '-') {
+            i += 1;
+        }
+        if i > open + 2 && i < chars.len() && chars[i] == ')' {
+            Some(i)
+        } else {
+            None
+        }
+    }
+
+    fn mark_consumed(&mut self, top: bool) {
+        if top {
+            self.consumed = true;
+        }
+    }
+}
+
+/// Skip a bracketed class starting at `open`, returning the offset just past
+/// its closing `]`. A `]` first (or after `^`) is a literal.
+fn skip_class(chars: &[char], open: usize) -> usize {
+    let mut i = (open + 1).min(chars.len());
+    if i < chars.len() && chars[i] == '^' {
+        i += 1;
+    }
+    if i < chars.len() && chars[i] == ']' {
+        i += 1;
+    }
+    while i < chars.len() && chars[i] != ']' {
+        if chars[i] == '\\' {
+            i += 1;
+        }
+        i += 1;
+    }
+    (i + 1).min(chars.len())
+}
+
+/// A group name quoted as CPython reports it: verbatim for `str` patterns,
+/// ascii-escaped for `bytes` patterns (`%a` of the latin-1 decoding).
+fn quote_name(name: &str, bytes: bool) -> String {
+    if !bytes {
+        return format!("'{name}'");
+    }
+    let mut out = String::from("'");
+    for c in name.chars() {
+        if c.is_ascii() {
+            out.push(c);
+        } else {
+            out.push_str(&format!("\\x{:02x}", c as u32));
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// An [`Error::Unsupported`] with a static message.
+fn pre_error(msg: &str, offset: usize) -> Error {
+    Error::Unsupported {
+        what: msg.to_string(),
+        offset,
     }
 }
 
@@ -1095,12 +1478,114 @@ fn unsupported(what: &'static str, span: &Span) -> Error {
 mod tests {
     use super::*;
 
+    fn error_of(pattern: &str) -> Error {
+        match compile(pattern) {
+            Ok(_) => panic!("pattern {pattern:?} compiled but should not"),
+            Err(err) => err,
+        }
+    }
+
     #[test]
     fn end_anchor_normalization_preserves_escapes() {
         assert_eq!(normalize_end_anchor(r"\Z"), r"\z");
         assert_eq!(normalize_end_anchor(r"\\Z"), r"\\Z");
         assert_eq!(normalize_end_anchor(r"\\\Z"), r"\\\z");
         assert_eq!(normalize_end_anchor(r"a\Zb"), r"a\zb");
+    }
+
+    #[test]
+    fn global_inline_flags_follow_cpython_placement_rules() {
+        // Legal at the start, including runs and verbose whitespace.
+        assert!(compile("(?i)a").is_ok());
+        assert!(compile("(?i)(?s)a").is_ok());
+        assert!(compile("(?x) (?i) a").is_ok());
+        // A `(?#...)` comment does not consume the leading position. The
+        // comment form itself is still rejected by the parser, so probe the
+        // pre-scan directly.
+        assert!(prevalidate("(?#c)(?i)a", false).is_ok());
+        // A scoped flag group is legal anywhere, even empty.
+        assert!(compile("a(?i:)").is_ok());
+        assert!(compile("((?i:))").is_ok());
+        // Misplaced global flags carry CPython's message and position.
+        let err = error_of("(?:(?i)X)");
+        assert_eq!(
+            err.message(),
+            "global flags not at the start of the expression"
+        );
+        assert_eq!(err.offset(), Some(3));
+        let err = error_of("x(?i)");
+        assert_eq!(err.offset(), Some(1));
+        let err = error_of("(?i) X (?x)");
+        assert_eq!(err.offset(), Some(7));
+        let err = error_of("(^)?(?(1)(?i)X)");
+        assert_eq!(
+            err.message(),
+            "global flags not at the start of the expression"
+        );
+        assert_eq!(err.offset(), Some(9));
+    }
+
+    #[test]
+    fn conditional_groups_report_cpython_diagnostics() {
+        let cases: &[(&str, &str, usize)] = &[
+            (r"(?P<a>)(?(0)a|b)", "bad group number", 10),
+            (r"()(?(-1)a|b)", "bad character in group name '-1'", 5),
+            (r"()(?( 1 )a|b)", "bad character in group name ' 1 '", 5),
+            (r"()(?(1", "missing ), unterminated name", 5),
+            (r"()(?(1)a", "missing ), unterminated subpattern", 2),
+            (
+                r"()(?(1)a|b|c)",
+                "conditional backref with more than two branches",
+                10,
+            ),
+            (r"()(?(2)a)", "invalid group reference 2", 5),
+            (r"(?(a))", "unknown group name 'a'", 3),
+            (r"(?(", "missing group name", 3),
+            (r"(?())", "missing group name", 3),
+        ];
+        for (pattern, message, offset) in cases {
+            let err = error_of(pattern);
+            assert_eq!(&err.message(), message, "pattern {pattern:?}");
+            assert_eq!(err.offset(), Some(*offset), "pattern {pattern:?}");
+        }
+        // The `_sre.MAXGROUPS` bound, as `test_re_groupref_overflow` checks.
+        let err = error_of("(?P<a>)(?(1073741823))");
+        assert_eq!(err.message(), "invalid group reference 1073741823");
+        assert_eq!(err.offset(), Some(10));
+    }
+
+    #[test]
+    fn anchored_start_covers_only_start_anchored_programs() {
+        assert!(compile(r"\Ay").unwrap().anchored_start);
+        assert!(compile(r"^y").unwrap().anchored_start);
+        assert!(compile(r"(?i)^y").unwrap().anchored_start);
+        assert!(compile(r"(^y)").unwrap().anchored_start);
+        assert!(compile(r"a?^y").unwrap().anchored_start);
+        assert!(compile(r"y\A").unwrap().anchored_start); // never matches
+        assert!(!compile(r"(?m)^y").unwrap().anchored_start);
+        assert!(!compile(r"^a|b").unwrap().anchored_start);
+        assert!(!compile(r"(?:^)?y").unwrap().anchored_start);
+        assert!(!compile(r"(\Ay)*").unwrap().anchored_start);
+        assert!(!compile(r"(?i)y").unwrap().anchored_start);
+        assert!(!compile("").unwrap().anchored_start);
+    }
+
+    #[test]
+    fn multiple_repeat_position_includes_one_modifier() {
+        let cases: &[(&str, usize)] = &[
+            (r"x**", 2),
+            (r"x*?*", 3),
+            (r"x**+", 2),
+            (r"x*+*+", 3),
+            (r"x{1,2}*+", 6),
+            (r"x*+{1,2}+", 3),
+            (r"x{1,2}+?", 7),
+        ];
+        for (pattern, offset) in cases {
+            let err = error_of(pattern);
+            assert_eq!(err.message(), "multiple repeat", "pattern {pattern:?}");
+            assert_eq!(err.offset(), Some(*offset), "pattern {pattern:?}");
+        }
     }
 
     #[test]

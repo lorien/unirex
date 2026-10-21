@@ -38,7 +38,7 @@ def _install_shims():
         {
             "Pattern": unirex.Pattern,
             "Match": unirex.Match,
-            "Scanner": None,
+            "Scanner": unirex.Scanner,
             "_compile": unirex.compile,  # pickle reconstruction helper
             "__name__": "re",
         }

@@ -138,7 +138,8 @@ impl PyPattern {
         PyTuple::new(py, [compile, args.into_any()])
     }
 
-    /// A cursor over `string`, as in `re.Pattern.scanner`.
+    /// A cursor over `string`, as in `re.Pattern.scanner`. Matches report
+    /// absolute spans, and `pos`/`endpos` bound the scan window.
     #[pyo3(signature = (string, pos = 0, endpos = None))]
     fn scanner(
         &self,
@@ -149,12 +150,12 @@ impl PyPattern {
     ) -> PyResult<Py<PyScanner>> {
         let total = string.to_cow().map(|c| c.chars().count()).unwrap_or(0);
         let endpos = endpos.unwrap_or(total).min(total);
+        let pattern = Py::new(py, PyPattern::with_flags(&self.pattern, self.flags)?)?;
         Py::new(
             py,
             PyScanner {
+                pattern,
                 text: string.clone().unbind(),
-                pattern_text: self.pattern.clone(),
-                flags: self.flags,
                 position: pos,
                 endpos,
             },
@@ -347,8 +348,9 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
-        if let Some(converted) = as_byte_subject(py, text)? {
-            return self.search(py, converted.as_any(), pos, endpos);
+        if let Some((raw, subject)) = buffer_subject(text)? {
+            self.check_bytes_pattern()?;
+            return self.bytes_input(py, &raw, Some(subject), pos, endpos, false, false);
         }
         self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
@@ -358,7 +360,7 @@ impl PyPattern {
             return self.windowed(py, text, pos, endpos, false, false);
         }
         if let Some(raw) = py_bytes(text) {
-            return self.bytes_match_with_position(py, raw, false, false);
+            return self.bytes_match_with_position(py, raw, false, false, None);
         }
         let text = text
             .cast::<PyString>()
@@ -377,15 +379,16 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
-        if let Some(converted) = as_byte_subject(py, text)? {
-            return self.match_(py, converted.as_any(), pos, endpos);
+        if let Some((raw, subject)) = buffer_subject(text)? {
+            self.check_bytes_pattern()?;
+            return self.bytes_input(py, &raw, Some(subject), pos, endpos, true, false);
         }
         self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             if pos != 0 || endpos.is_some() {
                 return Ok(self.bytes_search(py, text, pos, endpos, true, false));
             }
-            return self.bytes_match_with_position(py, raw, true, false);
+            return self.bytes_match_with_position(py, raw, true, false, None);
         }
         if pos != 0 || endpos.is_some() {
             return self.windowed(py, text, pos, endpos, true, false);
@@ -406,8 +409,9 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
-        if let Some(converted) = as_byte_subject(py, text)? {
-            return self.search(py, converted.as_any(), pos, endpos);
+        if let Some((raw, subject)) = buffer_subject(text)? {
+            self.check_bytes_pattern()?;
+            return self.bytes_input(py, &raw, Some(subject), pos, endpos, true, true);
         }
         self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
@@ -417,12 +421,52 @@ impl PyPattern {
             return self.windowed(py, text, pos, endpos, true, true);
         }
         if let Some(raw) = py_bytes(text) {
-            return self.bytes_match_with_position(py, raw, true, true);
+            return self.bytes_match_with_position(py, raw, true, true, None);
         }
         let text = text
             .cast::<PyString>()
             .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.match_with_position(py, text, true, true)
+    }
+
+    /// A buffer subject is only valid for a bytes pattern.
+    fn check_bytes_pattern(&self) -> PyResult<()> {
+        if !self.bytes {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "cannot use a string pattern on a bytes-like object",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Run a search over a buffer subject, keeping the original object on
+    /// the match so groups read live, as CPython's `Match.group` does.
+    fn bytes_input(
+        &self,
+        py: Python<'_>,
+        raw: &[u8],
+        subject: Option<Py<PyAny>>,
+        pos: usize,
+        endpos: Option<usize>,
+        anchored_start: bool,
+        anchored_end: bool,
+    ) -> PyResult<Option<Py<PyMatch>>> {
+        let total = raw.len();
+        let endpos = endpos.unwrap_or(total).min(total);
+        if pos > endpos {
+            return Ok(None);
+        }
+        let window = &raw[pos..endpos];
+        let found =
+            self.bytes_match_with_position(py, window, anchored_start, anchored_end, subject)?;
+        if let Some(found) = &found {
+            let mut inner = found.borrow_mut(py);
+            shift_slots(&mut inner.slots, pos);
+            inner.raw = raw.to_vec();
+            inner.pos = pos;
+            inner.endpos = endpos;
+        }
+        Ok(found)
     }
 
     /// Reject mixing a bytes pattern with a str subject and the reverse.
@@ -488,7 +532,7 @@ impl PyPattern {
         }
         let window = &raw[pos..endpos];
         let found = self
-            .bytes_match_with_position(py, window, anchored_start, anchored_end)
+            .bytes_match_with_position(py, window, anchored_start, anchored_end, None)
             .ok()??;
         {
             let mut inner = found.borrow_mut(py);
@@ -544,6 +588,7 @@ impl PyPattern {
         raw: &[u8],
         anchored_start: bool,
         anchored_end: bool,
+        subject: Option<Py<PyAny>>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let mut scratch = self.take_scratch();
         let width = 2 * (self.inner.group_count() + 1);
@@ -564,6 +609,7 @@ impl PyPattern {
                         &self.names(),
                         &self.pattern,
                         self.flags,
+                        subject,
                     )?)
                 } else {
                     None
@@ -626,14 +672,27 @@ impl PyPattern {
         count: usize,
         _counted: bool,
     ) -> PyResult<(Py<PyAny>, usize)> {
-        let all = self.bytes_slots(py, raw)?;
         let names = self.names();
+        // CPython parses the template before matching, so a bad template
+        // errors even when the subject has no matches.
+        let parsed = if repl.is_callable() {
+            None
+        } else {
+            let template: Vec<u8> = repl.extract()?;
+            let text: String = template.iter().map(|&byte| byte as char).collect();
+            Some(
+                parse_template(&text, self.inner.group_count(), &names)
+                    .map_err(|err| template_error(py, repl, &err))?,
+            )
+        };
+        let all = self.bytes_slots(py, raw)?;
         let limit = if count == 0 {
             all.len()
         } else {
             count.min(all.len())
         };
         let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+        let hay: String = raw.iter().map(|&byte| byte as char).collect();
         let mut previous = 0usize;
         let mut replaced = 0usize;
         for (position, slots) in all.iter().enumerate() {
@@ -645,16 +704,21 @@ impl PyPattern {
                 break;
             }
             out.extend_from_slice(&raw[previous..start]);
-            let hay: String = raw.iter().map(|&byte| byte as char).collect();
             if repl.is_callable() {
-                let m = bytes_match(py, raw, slots.clone(), &names, &self.pattern, self.flags)?;
+                let m = bytes_match(
+                    py,
+                    raw,
+                    slots.clone(),
+                    &names,
+                    &self.pattern,
+                    self.flags,
+                    None,
+                )?;
                 let value: Vec<u8> = repl.call1((m,))?.extract()?;
                 out.extend_from_slice(&value);
             } else {
-                let template: Vec<u8> = repl.extract()?;
-                let template: String = template.iter().map(|&byte| byte as char).collect();
-                let expanded = expand_replacement(&template, &hay, slots, &names)
-                    .map_err(pyo3::exceptions::PyValueError::new_err)?;
+                let pieces = parsed.as_ref().expect("template parsed before matching");
+                let expanded = expand_template(pieces, &hay, slots);
                 out.extend(expanded.chars().map(|ch| ch as u8));
             }
             previous = end;
@@ -673,6 +737,9 @@ impl PyPattern {
         maxsplit: isize,
     ) -> PyResult<Py<PyList>> {
         let text = string;
+        if let Some(converted) = as_byte_subject(py, text)? {
+            return self.split(py, converted.as_any(), maxsplit);
+        }
         self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             return self.split_bytes(py, raw, maxsplit);
@@ -746,6 +813,39 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<PyFindIter> {
         let text = string;
+        if let Some((raw, subject)) = buffer_subject(text)? {
+            self.check_bytes_pattern()?;
+            let mut scratch = self.take_scratch();
+            let width = 2 * (self.inner.group_count() + 1);
+            let found: Vec<crate::Match> = self
+                .inner
+                .find_iter_bytes_with(&mut scratch, &raw)
+                .collect();
+            let mut slots = vec![usize::MAX; width];
+            let mut matches = Vec::with_capacity(found.len());
+            for m in found {
+                slots.fill(usize::MAX);
+                if self
+                    .inner
+                    .captures(&mut scratch, Ucs::Ucs1(&raw), m, &mut slots)
+                {
+                    matches.push(slots.clone());
+                }
+            }
+            self.put_scratch(scratch);
+            return Ok(PyFindIter {
+                text: PyString::new(py, "").unbind(),
+                raw: raw.clone(),
+                subject: Some(subject),
+                bytes: true,
+                matches,
+                position: 0,
+                names: self.names(),
+                pattern_text: self.pattern.clone(),
+                flags: self.flags,
+                endpos: raw.len(),
+            });
+        }
         self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
             return self.finditer_window(py, text, pos, endpos);
@@ -770,6 +870,7 @@ impl PyPattern {
             return Ok(PyFindIter {
                 text: PyString::new(py, "").unbind(),
                 raw: raw.to_vec(),
+                subject: None,
                 bytes: true,
                 matches,
                 position: 0,
@@ -791,6 +892,7 @@ impl PyPattern {
         Ok(PyFindIter {
             text: text.clone().unbind(),
             raw: Vec::new(),
+            subject: None,
             bytes: false,
             matches,
             position: 0,
@@ -835,6 +937,7 @@ impl PyPattern {
                             PyMatch {
                                 text: text.clone().unbind(),
                                 raw: Vec::new(),
+                                subject: None,
                                 bytes: false,
                                 slots,
                                 names: self.names(),
@@ -885,15 +988,29 @@ impl PyPattern {
         text: &Bound<'_, PyString>,
         count: usize,
     ) -> PyResult<(Py<PyString>, usize)> {
-        let all = self.matches_with_slots(py, text)?;
         let names = self.names();
-        let hay = text.to_cow()?.into_owned();
+        // CPython parses the template before matching, so a bad template
+        // errors even when the subject has no matches.
+        let parsed = if repl.is_callable() {
+            None
+        } else {
+            let template = repl.extract::<String>()?;
+            Some(
+                parse_template(&template, self.inner.group_count(), &names)
+                    .map_err(|err| template_error(py, repl, &err))?,
+            )
+        };
+        let all = self.matches_with_slots(py, text)?;
+        let total = py_ucs(text).map(|ucs| ucs.len()).unwrap_or(0);
         let limit = if count == 0 {
             all.len()
         } else {
             count.min(all.len())
         };
-        let mut pieces: Vec<String> = Vec::new();
+        // Untouched spans are shared with the subject through
+        // `PyUnicode_Substring` instead of being copied through a `String`,
+        // so a no-op `sub` over a large haystack stays cheap.
+        let mut pieces: Vec<Py<PyString>> = Vec::new();
         let mut previous = 0usize;
         let mut replaced = 0usize;
         for (position, slots) in all.iter().enumerate() {
@@ -904,38 +1021,56 @@ impl PyPattern {
             if position >= limit {
                 break;
             }
-            let prefix: String = char_slice(&hay, previous, start);
-            pieces.push(prefix);
-            let value = if repl.is_callable() {
+            pieces.push(substring(py, text, previous, start)?.unbind());
+            if repl.is_callable() {
                 let m = Py::new(
                     py,
                     PyMatch {
                         text: text.clone().unbind(),
                         raw: Vec::new(),
+                        subject: None,
                         bytes: false,
                         slots: slots.clone(),
                         names: names.clone(),
                         pattern_text: self.pattern.clone(),
                         flags: self.flags,
                         pos: 0,
-                        endpos: text.to_cow().map(|c| c.chars().count()).unwrap_or(0),
+                        endpos: total,
                         last_index: None,
                     },
                 )?;
                 let out = repl.call1((m,))?;
-                out.extract::<String>()?
+                let value: String = out.extract()?;
+                pieces.push(PyString::new(py, &value).unbind());
             } else {
-                let template = repl.extract::<String>()?;
-                expand_replacement(&template, &hay, slots, &names)
-                    .map_err(pyo3::exceptions::PyValueError::new_err)?
-            };
-            pieces.push(value);
+                let template = parsed.as_ref().expect("template parsed before matching");
+                for piece in template {
+                    match piece {
+                        TplPiece::Lit(value) => {
+                            pieces.push(PyString::new(py, value).unbind());
+                        }
+                        TplPiece::Group(index) => {
+                            let value = match (slots.get(2 * index), slots.get(2 * index + 1)) {
+                                (Some(&lo), Some(&hi)) if lo != usize::MAX && hi != usize::MAX => {
+                                    substring(py, text, lo, hi)?
+                                }
+                                _ => PyString::new(py, ""),
+                            };
+                            pieces.push(value.unbind());
+                        }
+                    }
+                }
+            }
             previous = end;
             replaced += 1;
         }
-        pieces.push(char_slice(&hay, previous, hay.chars().count()));
-        let result = pieces.concat();
-        Ok((PyString::new(py, &result).unbind(), replaced))
+        pieces.push(substring(py, text, previous, total)?.unbind());
+        let joiner = PyString::new(py, "");
+        let result = joiner.call_method1("join", (PyList::new(py, pieces)?,))?;
+        let result = result
+            .cast_into::<PyString>()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("join did not return str"))?;
+        Ok((result.unbind(), replaced))
     }
 
     fn split_impl(
@@ -945,7 +1080,7 @@ impl PyPattern {
         maxsplit: isize,
     ) -> PyResult<Py<PyList>> {
         let all = self.matches_with_slots(py, text)?;
-        let hay = text.to_cow()?.into_owned();
+        let total = py_ucs(text).map(|ucs| ucs.len()).unwrap_or(0);
         let list = PyList::empty(py);
         let limit = if maxsplit <= 0 {
             all.len()
@@ -961,22 +1096,19 @@ impl PyPattern {
             if start == usize::MAX || end == usize::MAX {
                 continue;
             }
-            list.append(PyString::new(py, &char_slice(&hay, previous, start)))?;
+            list.append(substring(py, text, previous, start)?)?;
             for index in 1..(slots.len() / 2) {
                 let (lo, hi) = (slots[2 * index], slots[2 * index + 1]);
                 let value = if lo == usize::MAX || hi == usize::MAX {
-                    None
+                    py.None()
                 } else {
-                    Some(char_slice(&hay, lo, hi))
+                    substring(py, text, lo, hi)?.into_any().unbind()
                 };
                 list.append(value)?;
             }
             previous = end;
         }
-        list.append(PyString::new(
-            py,
-            &char_slice(&hay, previous, hay.chars().count()),
-        ))?;
+        list.append(substring(py, text, previous, total)?)?;
         Ok(list.unbind())
     }
 
@@ -994,6 +1126,34 @@ impl PyPattern {
         };
         self.put_scratch(scratch);
         Ok(found)
+    }
+
+    /// Patterns compare by value: the source pattern, its `bytes`ness, and
+    /// the flags. Two separately compiled equal patterns are equal and hash
+    /// alike, as in `re`; the comparison never mixes `str` and `bytes`, so it
+    /// stays silent under `-bb`.
+    fn __eq__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> Py<PyAny> {
+        let Ok(other) = other.cast::<PyPattern>() else {
+            return py.NotImplemented();
+        };
+        let other = other.borrow();
+        let equal =
+            self.bytes == other.bytes && self.flags == other.flags && self.pattern == other.pattern;
+        equal
+            .into_pyobject(py)
+            .expect("bool conversion cannot fail")
+            .to_owned()
+            .unbind()
+            .into_any()
+    }
+
+    /// The hash of the pattern value, stable across compiles.
+    fn __hash__(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&self.bytes, &mut hasher);
+        std::hash::Hash::hash(&self.flags, &mut hasher);
+        std::hash::Hash::hash(&self.pattern, &mut hasher);
+        std::hash::Hasher::finish(&hasher)
     }
 
     fn __repr__(&self) -> String {
@@ -1106,7 +1266,8 @@ fn py_bytes<'a>(text: &'a Bound<'_, PyAny>) -> Option<&'a [u8]> {
     text.cast::<PyBytes>().ok().map(|raw| raw.as_bytes())
 }
 
-/// Build a `PyMatch` for a bytes subject.
+/// Build a `PyMatch` for a bytes subject. `subject` keeps the original
+/// buffer object when the subject was not `bytes`, for live group reads.
 fn bytes_match(
     py: Python<'_>,
     raw: &[u8],
@@ -1114,12 +1275,14 @@ fn bytes_match(
     names: &[(String, usize)],
     pattern_text: &str,
     flags: u32,
+    subject: Option<Py<PyAny>>,
 ) -> PyResult<Py<PyMatch>> {
     Py::new(
         py,
         PyMatch {
             text: PyString::new(py, "").unbind(),
             raw: raw.to_vec(),
+            subject,
             bytes: true,
             slots,
             names: names.to_vec(),
@@ -1382,54 +1545,67 @@ fn split(
         .split(py, text, maxsplit)
 }
 
-/// A `re.Scanner`-style cursor over a subject.
+/// A `re.Pattern.scanner` cursor over one subject, as in `re`.
+///
+/// Matches carry absolute spans and the original subject, and the cursor
+/// advances to each match's end.
 #[pyclass(name = "Scanner", module = "unirex")]
 pub struct PyScanner {
+    pattern: Py<PyPattern>,
     text: Py<PyString>,
-    pattern_text: String,
-    flags: u32,
     position: usize,
     endpos: usize,
 }
 
 #[pymethods]
 impl PyScanner {
+    /// The compiled pattern this cursor scans with.
+    #[getter]
+    fn pattern(&self, py: Python<'_>) -> Py<PyPattern> {
+        self.pattern.clone_ref(py)
+    }
+
     /// Anchored attempt at the current cursor, advancing on success.
     #[pyo3(name = "match")]
     fn match_(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyMatch>>> {
-        let hay = self.text.bind(py).to_cow()?.into_owned();
-        let tail: String = hay
-            .chars()
-            .skip(self.position)
-            .take(self.endpos.saturating_sub(self.position))
-            .collect();
-        let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
-        let Some(found) = pattern.match_(py, &PyString::new(py, &tail).into_any(), 0, None)? else {
-            return Ok(None);
-        };
-        let bound = found.bind(py);
-        let (start, end) = bound.borrow().span_of(0).unwrap_or((0, 0));
-        self.position += end;
-        let _ = start;
-        Ok(Some(found))
+        let pattern = self.pattern.clone_ref(py);
+        let text = self.text.clone_ref(py);
+        let found = pattern.borrow(py).match_(
+            py,
+            text.bind(py).clone().into_any().as_ref(),
+            self.position,
+            Some(self.endpos),
+        )?;
+        if let Some(found) = &found {
+            self.position = found
+                .bind(py)
+                .borrow()
+                .span_of(0)
+                .map(|(_, end)| end)
+                .unwrap_or(self.position);
+        }
+        Ok(found)
     }
 
     /// Unanchored attempt from the current cursor, advancing on success.
     fn search(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyMatch>>> {
-        let hay = self.text.bind(py).to_cow()?.into_owned();
-        let tail: String = hay
-            .chars()
-            .skip(self.position)
-            .take(self.endpos.saturating_sub(self.position))
-            .collect();
-        let pattern = PyPattern::with_flags(&self.pattern_text, self.flags)?;
-        let Some(found) = pattern.search(py, &PyString::new(py, &tail).into_any(), 0, None)? else {
-            return Ok(None);
-        };
-        let bound = found.bind(py);
-        let (_, end) = bound.borrow().span_of(0).unwrap_or((0, 0));
-        self.position += end;
-        Ok(Some(found))
+        let pattern = self.pattern.clone_ref(py);
+        let text = self.text.clone_ref(py);
+        let found = pattern.borrow(py).search(
+            py,
+            text.bind(py).clone().into_any().as_ref(),
+            self.position,
+            Some(self.endpos),
+        )?;
+        if let Some(found) = &found {
+            self.position = found
+                .bind(py)
+                .borrow()
+                .span_of(0)
+                .map(|(_, end)| end)
+                .unwrap_or(self.position);
+        }
+        Ok(found)
     }
 }
 
@@ -1535,6 +1711,9 @@ pub struct PyMatch {
     text: Py<PyString>,
     /// Raw subject when the match came from bytes.
     raw: Vec<u8>,
+    /// The original subject object when it was a buffer rather than `bytes`,
+    /// so groups are read live, as CPython's `Match.group` does.
+    subject: Option<Py<PyAny>>,
     bytes: bool,
     slots: Vec<usize>,
     names: Vec<(String, usize)>,
@@ -1584,11 +1763,31 @@ fn resolve_index_with(
 
 impl PyMatch {
     /// One group as `str` or `bytes`, depending on the subject type.
+    ///
+    /// A buffer-backed bytes match re-reads the subject at call time, so a
+    /// mutated `bytearray` is reflected, as in `re`.
     fn value<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Option<Py<PyAny>>> {
         let Some((lo, hi)) = self.span_of(index) else {
             return Ok(None);
         };
         if self.bytes {
+            if let Some(subject) = &self.subject {
+                let bound = subject.bind(py);
+                if let Ok(view) = pyo3::buffer::PyBuffer::<u8>::get(bound) {
+                    // SAFETY: the view pins the buffer alive and no Python
+                    // code runs while the slice is read. Spans clamp to the
+                    // live length, as Python slicing does, so a resized
+                    // `bytearray` is read at its current size.
+                    if let Some(slice) = view.as_slice_ptr() {
+                        let slice = unsafe { slice.as_ref() };
+                        let len = slice.len();
+                        let lo = lo.min(len);
+                        let hi = hi.min(len).max(lo);
+                        let bytes: Vec<u8> = slice[lo..hi].to_vec();
+                        return Ok(Some(PyBytes::new(py, &bytes).into_any().unbind()));
+                    }
+                }
+            }
             return Ok(Some(
                 PyBytes::new(py, &self.raw[lo..hi]).into_any().unbind(),
             ));
@@ -1690,16 +1889,29 @@ impl PyMatch {
         Ok(dict)
     }
 
+    /// `copy.copy` and `copy.deepcopy` return the same match, because a
+    /// match is an immutable view of its subject, as in CPython.
+    fn __copy__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __deepcopy__<'py>(slf: PyRef<'py, Self>, _memo: &Bound<'_, PyAny>) -> PyRef<'py, Self> {
+        slf
+    }
+
     /// The compiled pattern that produced this match.
     #[getter]
     fn re(&self, py: Python<'_>) -> PyResult<Py<PyPattern>> {
         Py::new(py, PyPattern::with_flags(&self.pattern_text, self.flags)?)
     }
 
-    /// The subject string.
+    /// The subject string, or the original buffer for a bytes match.
     #[getter]
-    fn string(&self, py: Python<'_>) -> Py<PyString> {
-        self.text.clone_ref(py)
+    fn string(&self, py: Python<'_>) -> Py<PyAny> {
+        if let Some(subject) = &self.subject {
+            return subject.clone_ref(py).into_any();
+        }
+        self.text.clone_ref(py).into_any()
     }
 
     /// Start of the search window.
@@ -1742,16 +1954,19 @@ impl PyMatch {
         if self.bytes {
             let template: &[u8] = template.extract()?;
             let text: String = template.iter().map(|&byte| byte as char).collect();
+            let template_object = PyBytes::new(py, template).into_any();
+            let pieces = parse_template(&text, self.slots.len() / 2 - 1, &self.names)
+                .map_err(|err| template_error(py, &template_object, &err))?;
             let hay: String = self.raw.iter().map(|&byte| byte as char).collect();
-            let expanded = expand_replacement(&text, &hay, &self.slots, &self.names)
-                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+            let expanded = expand_template(&pieces, &hay, &self.slots);
             let raw: Vec<u8> = expanded.chars().map(|ch| ch as u8).collect();
             return Ok(PyBytes::new(py, &raw).into_any().unbind());
         }
         let hay = self.text.bind(py).to_cow()?.into_owned();
-        let template = template.extract::<String>()?;
-        let expanded = expand_replacement(&template, &hay, &self.slots, &self.names)
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        let template_text = template.extract::<String>()?;
+        let pieces = parse_template(&template_text, self.slots.len() / 2 - 1, &self.names)
+            .map_err(|err| template_error(py, template, &err))?;
+        let expanded = expand_template(&pieces, &hay, &self.slots);
         Ok(PyString::new(py, &expanded).into_any().unbind())
     }
 
@@ -1771,6 +1986,8 @@ impl PyMatch {
 pub struct PyFindIter {
     text: Py<PyString>,
     raw: Vec<u8>,
+    /// The original buffer subject, so yielded matches read groups live.
+    subject: Option<Py<PyAny>>,
     bytes: bool,
     matches: Vec<Vec<usize>>,
     position: usize,
@@ -1795,6 +2012,7 @@ impl PyFindIter {
                 PyMatch {
                     text: slf.text.clone_ref(py),
                     raw: slf.raw.clone(),
+                    subject: slf.subject.as_ref().map(|subject| subject.clone_ref(py)),
                     bytes: slf.bytes,
                     slots,
                     names: slf.names.clone(),
@@ -1826,7 +2044,13 @@ fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
         other => other.offset(),
     };
     // CPython reports character positions; ours are byte offsets.
-    let offset = byte_offset.map(|offset| pattern[..offset.min(pattern.len())].chars().count());
+    let offset = byte_offset.map(|mut offset| {
+        offset = offset.min(pattern.len());
+        while offset > 0 && !pattern.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        pattern[..offset].chars().count()
+    });
     let ty = py.get_type::<Error>();
     let instance = match ty.call1((message.clone(),)) {
         Ok(value) => value,
@@ -1864,25 +2088,54 @@ fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // `re` exposes an IntFlag, not bare ints; build it with the stdlib so
     // comparisons and `re.RegexFlag(x)` behave the same.
     let globals = m.dict();
-    let code = std::ffi::CString::new(
-        "import enum as _enum\n\
-         RegexFlag = _enum.IntFlag('RegexFlag', {\n\
-             'NOFLAG': 0, 'TEMPLATE': 1, 'IGNORECASE': 2, 'I': 2, 'LOCALE': 4, 'L': 4,\n\
-             'MULTILINE': 8, 'M': 8, 'DOTALL': 16, 'S': 16, 'UNICODE': 32, 'U': 32,\n\
-             'VERBOSE': 64, 'X': 64, 'DEBUG': 128, 'ASCII': 256, 'A': 256,\n\
-         })\n\
-         NOFLAG, IGNORECASE, I = RegexFlag.NOFLAG, RegexFlag.IGNORECASE, RegexFlag.I\n\
-         LOCALE, L = RegexFlag.LOCALE, RegexFlag.L\n\
-         MULTILINE, M = RegexFlag.MULTILINE, RegexFlag.M\n\
-         DOTALL, S = RegexFlag.DOTALL, RegexFlag.S\n\
-         UNICODE, U = RegexFlag.UNICODE, RegexFlag.U\n\
-         VERBOSE, X = RegexFlag.VERBOSE, RegexFlag.X\n\
-         DEBUG, ASCII, A = RegexFlag.DEBUG, RegexFlag.ASCII, RegexFlag.A\n\
-         RegexFlag.__repr__ = lambda self: (f're.{self.name}' if self.name else f're.RegexFlag({int(self)})')\n\
-         RegexFlag.__str__ = RegexFlag.__repr__\n\
-         del _enum\n",
-    )
-    .expect("flag snippet");
+    let code = std::ffi::CString::new(concat!(
+        "import enum as _enum\n",
+        "RegexFlag = _enum.IntFlag('RegexFlag', {\n",
+        "'NOFLAG': 0, 'TEMPLATE': 1, 'IGNORECASE': 2, 'I': 2, 'LOCALE': 4, 'L': 4,\n",
+        "'MULTILINE': 8, 'M': 8, 'DOTALL': 16, 'S': 16, 'UNICODE': 32, 'U': 32,\n",
+        "'VERBOSE': 64, 'X': 64, 'DEBUG': 128, 'ASCII': 256, 'A': 256,\n",
+        "})\n",
+        "NOFLAG, IGNORECASE, I = RegexFlag.NOFLAG, RegexFlag.IGNORECASE, RegexFlag.I\n",
+        "LOCALE, L = RegexFlag.LOCALE, RegexFlag.L\n",
+        "MULTILINE, M = RegexFlag.MULTILINE, RegexFlag.M\n",
+        "DOTALL, S = RegexFlag.DOTALL, RegexFlag.S\n",
+        "UNICODE, U = RegexFlag.UNICODE, RegexFlag.U\n",
+        "VERBOSE, X = RegexFlag.VERBOSE, RegexFlag.X\n",
+        "DEBUG, ASCII, A = RegexFlag.DEBUG, RegexFlag.ASCII, RegexFlag.A\n",
+        "RegexFlag.__repr__ = lambda self: (f're.{self.name}' if self.name else f're.RegexFlag({int(self)})')\n",
+        "RegexFlag.__str__ = RegexFlag.__repr__\n",
+        "del _enum\n",
+        "\n",
+        "\n",
+        "class Scanner:\n",
+        "    def __init__(self, lexicon, flags=0):\n",
+        "        if isinstance(flags, int) and type(flags) is not int:\n",
+        "            flags = int(flags)\n",
+        "        self.lexicon = list(lexicon)\n",
+        "        phrases = ['(' + phrase + ')' for phrase, action in self.lexicon]\n",
+        "        self.scanner = compile('|'.join(phrases), flags)\n",
+        "\n",
+        "    def scan(self, string):\n",
+        "        result = []\n",
+        "        match = self.scanner.scanner(string).match\n",
+        "        i = 0\n",
+        "        while True:\n",
+        "            m = match()\n",
+        "            if not m:\n",
+        "                break\n",
+        "            j = m.end()\n",
+        "            if i == j:\n",
+        "                break\n",
+        "            action = self.lexicon[m.lastindex - 1][1]\n",
+        "            if callable(action):\n",
+        "                self.match = m\n",
+        "                action = action(self, m.group())\n",
+        "            if action is not None:\n",
+        "                result.append(action)\n",
+        "            i = j\n",
+        "        return result, string[i:]\n",
+    ))
+    .expect("module snippet");
     unsafe {
         pyo3::ffi::PyRun_StringFlags(
             code.as_ptr(),
@@ -1901,6 +2154,25 @@ fn shift_slots(slots: &mut [usize], offset: usize) {
         if *value != usize::MAX {
             *value += offset;
         }
+    }
+}
+
+/// A buffer-protocol subject for a bytes pattern: the bytes for matching
+/// plus the original object, so a `Match` holds a live reference as CPython's
+/// does. `None` for `str` and `bytes` subjects, which take their own paths.
+fn buffer_subject(text: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<u8>, Py<PyAny>)>> {
+    if text.cast::<PyString>().is_ok() || text.cast::<PyBytes>().is_ok() {
+        return Ok(None);
+    }
+    match text.extract::<Vec<u8>>() {
+        Ok(buffer) => Ok(Some((buffer, text.clone().unbind()))),
+        Err(_) => Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected string or bytes-like object, got '{}'",
+            text.get_type()
+                .name()
+                .map(|n| n.to_string())
+                .unwrap_or_default()
+        ))),
     }
 }
 
@@ -1935,141 +2207,223 @@ fn char_slice(hay: &str, start: usize, end: usize) -> String {
         .collect()
 }
 
-/// Expand `\1`, `\g<name>`, and `\\` in a replacement template.
-fn expand_replacement(
-    template: &str,
-    hay: &str,
-    slots: &[usize],
-    names: &[(String, usize)],
-) -> Result<String, String> {
-    let mut out = String::new();
-    let mut chars = template.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            out.push(ch);
-            continue;
-        }
-        match chars.peek().copied() {
-            Some('\\') => {
-                chars.next();
-                out.push('\\');
-            }
-            Some('g') => {
-                chars.next();
-                let mut name = String::new();
-                if chars.peek() == Some(&'<') {
-                    chars.next();
-                    for c in chars.by_ref() {
-                        if c == '>' {
-                            break;
-                        }
-                        name.push(c);
-                    }
-                }
-                let index = name
-                    .parse::<usize>()
-                    .ok()
-                    .or_else(|| names.iter().find(|(n, _)| *n == name).map(|(_, i)| *i));
-                match index {
-                    Some(index) => {
-                        if let (Some(&lo), Some(&hi)) =
-                            (slots.get(2 * index), slots.get(2 * index + 1))
-                        {
-                            if lo != usize::MAX && hi != usize::MAX {
-                                out.push_str(&char_slice(hay, lo, hi));
-                            }
-                        } else {
-                            return Err(format!("invalid group reference {index}"));
-                        }
-                    }
-                    None => return Err("invalid group reference".to_string()),
-                }
-            }
-            Some('a') => {
-                chars.next();
-                out.push('\x07');
-            }
-            Some('b') => {
-                // In a replacement template `\b` is a backspace.
-                chars.next();
-                out.push('\x08');
-            }
-            Some('f') => {
-                chars.next();
-                out.push('\x0c');
-            }
-            Some('n') => {
-                chars.next();
-                out.push('\n');
-            }
-            Some('r') => {
-                chars.next();
-                out.push('\r');
-            }
-            Some('t') => {
-                chars.next();
-                out.push('\t');
-            }
-            Some('v') => {
-                chars.next();
-                out.push('\x0b');
-            }
-            Some('0') => {
-                let mut value = 0u32;
-                let mut digits = 0;
-                while digits < 3 {
-                    match chars.peek().copied() {
-                        Some(digit) if digit.is_digit(8) => {
-                            value = value * 8 + digit.to_digit(8).unwrap_or(0);
-                            chars.next();
-                            digits += 1;
-                        }
-                        _ => break,
-                    }
-                }
-                if let Some(ch) = char::from_u32(value) {
-                    out.push(ch);
-                }
-            }
-            Some(digit) if digit.is_ascii_digit() => {
-                // CPython: a leading `0` is always octal (up to three digits);
-                // otherwise one or two digits are a group reference and three
-                // octal digits are an octal escape.
-                let mut digits = String::new();
-                digits.push(digit);
-                chars.next();
-                while digits.len() < 3 {
-                    match chars.peek().copied() {
-                        Some(next) if next.is_digit(8) => {
-                            digits.push(next);
-                            chars.next();
-                        }
-                        _ => break,
-                    }
-                }
-                let octal = digit == '0' || digits.len() == 3;
-                if octal {
-                    let value = u32::from_str_radix(&digits, 8).unwrap_or(0);
-                    if let Some(ch) = char::from_u32(value) {
-                        out.push(ch);
-                    }
-                } else if let Ok(index) = digits.parse::<usize>() {
-                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
-                    {
-                        if lo != usize::MAX && hi != usize::MAX {
-                            out.push_str(&char_slice(hay, lo, hi));
-                        }
-                    } else {
-                        return Err(format!("invalid group reference {index}"));
-                    }
-                }
-            }
-            Some(other) => {
-                chars.next();
-                out.push(other);
-            }
-            None => out.push('\\'),
+/// One parsed piece of a replacement template.
+#[derive(Clone, Debug)]
+enum TplPiece {
+    /// Literal text.
+    Lit(String),
+    /// A group reference by index.
+    Group(usize),
+}
+
+/// A replacement-template error, mirroring CPython's `parse_template`.
+///
+/// `index_error` marks the unknown-group-name case, which CPython raises as
+/// `IndexError` rather than `re.error`.
+struct TplErr {
+    msg: String,
+    /// Character position in the template.
+    pos: usize,
+    index_error: bool,
+}
+
+impl TplErr {
+    fn error(msg: impl Into<String>, pos: usize) -> TplErr {
+        TplErr {
+            msg: msg.into(),
+            pos,
+            index_error: false,
         }
     }
-    Ok(out)
+}
+
+/// Parse a replacement template, as CPython's `re._parser.parse_template`
+/// does: `\\g<name>` references, one- or two-digit group references,
+/// three-digit octal escapes, `\\0` octal escapes, and the simple escapes.
+/// Validation errors carry CPython's message and position.
+fn parse_template(
+    template: &str,
+    groups: usize,
+    names: &[(String, usize)],
+) -> Result<Vec<TplPiece>, TplErr> {
+    let chars: Vec<char> = template.chars().collect();
+    let mut pieces = Vec::new();
+    let mut lit = String::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c != '\\' {
+            lit.push(c);
+            i += 1;
+            continue;
+        }
+        // A lone trailing backslash stays literal.
+        let Some(&next) = chars.get(i + 1) else {
+            lit.push('\\');
+            break;
+        };
+        let escape = i;
+        match next {
+            '\\' => {
+                lit.push('\\');
+                i += 2;
+            }
+            'g' => {
+                if chars.get(i + 2) != Some(&'<') {
+                    return Err(TplErr::error("missing <", escape + 2));
+                }
+                let name_start = i + 3;
+                let Some(rel) = chars[name_start..].iter().position(|&c| c == '>') else {
+                    if name_start >= chars.len() {
+                        return Err(TplErr::error("missing group name", name_start));
+                    }
+                    return Err(TplErr::error("missing >, unterminated name", name_start));
+                };
+                let name: String = chars[name_start..name_start + rel].iter().collect();
+                if name.is_empty() {
+                    return Err(TplErr::error("missing group name", name_start));
+                }
+                let index = if name.chars().all(|c| c.is_ascii_digit()) {
+                    match name.parse::<usize>() {
+                        Ok(index) => index,
+                        Err(_) => usize::MAX,
+                    }
+                } else {
+                    match names.iter().find(|(existing, _)| *existing == name) {
+                        Some((_, index)) => *index,
+                        None => {
+                            return Err(TplErr {
+                                msg: format!("unknown group name '{name}'"),
+                                pos: name_start,
+                                index_error: true,
+                            });
+                        }
+                    }
+                };
+                if index > groups {
+                    return Err(TplErr::error(
+                        format!("invalid group reference {index}"),
+                        name_start,
+                    ));
+                }
+                pieces.push(TplPiece::Lit(std::mem::take(&mut lit)));
+                pieces.push(TplPiece::Group(index));
+                i = name_start + rel + 1;
+            }
+            '0' => {
+                // Octal escape: `\0` plus up to two more octal digits.
+                let mut value: u32 = 0;
+                let mut j = i + 1;
+                while j < chars.len() && j < i + 4 && matches!(chars[j], '0'..='7') {
+                    value = value * 8 + chars[j].to_digit(8).unwrap_or(0);
+                    j += 1;
+                }
+                lit.push(char::from_u32(value).unwrap_or('\0'));
+                i = j;
+            }
+            '1'..='9' => {
+                let mut j = i + 2;
+                if j < chars.len() && chars[j].is_ascii_digit() {
+                    j += 1;
+                    // A three-digit octal escape, e.g. `\141`.
+                    let octal = matches!(chars[i + 1], '0'..='7')
+                        && matches!(chars[j - 1], '0'..='7')
+                        && j < chars.len()
+                        && matches!(chars[j], '0'..='7');
+                    if octal {
+                        let digits: String = chars[i + 1..=j].iter().collect();
+                        let value = u32::from_str_radix(&digits, 8).unwrap_or(0);
+                        if value > 0o377 {
+                            return Err(TplErr::error(
+                                format!("octal escape value \\{digits} outside of range 0-0o377"),
+                                escape,
+                            ));
+                        }
+                        lit.push(char::from_u32(value).unwrap_or('\0'));
+                        i = j + 1;
+                        continue;
+                    }
+                }
+                let digits: String = chars[i + 1..j].iter().collect();
+                let index: usize = digits.parse().unwrap_or(usize::MAX);
+                if index > groups {
+                    return Err(TplErr::error(
+                        format!("invalid group reference {index}"),
+                        escape + 1,
+                    ));
+                }
+                pieces.push(TplPiece::Lit(std::mem::take(&mut lit)));
+                pieces.push(TplPiece::Group(index));
+                i = j;
+            }
+            'a' | 'b' | 'f' | 'n' | 'r' | 't' | 'v' => {
+                let value = match next {
+                    'a' => '\x07',
+                    'b' => '\x08',
+                    'f' => '\x0c',
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    _ => '\x0b',
+                };
+                lit.push(value);
+                i += 2;
+            }
+            c if c.is_ascii_alphabetic() => {
+                return Err(TplErr::error(format!("bad escape \\{c}"), escape));
+            }
+            _ => {
+                // Unknown non-letter escapes stay literal, as in `re`.
+                lit.push('\\');
+                lit.push(next);
+                i += 2;
+            }
+        }
+    }
+    if !lit.is_empty() {
+        pieces.push(TplPiece::Lit(lit));
+    }
+    Ok(pieces)
+}
+
+/// Expand parsed template pieces against match slots over `hay`.
+fn expand_template(pieces: &[TplPiece], hay: &str, slots: &[usize]) -> String {
+    let mut out = String::new();
+    for piece in pieces {
+        match piece {
+            TplPiece::Lit(text) => out.push_str(text),
+            TplPiece::Group(index) => {
+                if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1)) {
+                    if lo != usize::MAX && hi != usize::MAX {
+                        out.push_str(&char_slice(hay, lo, hi));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Raise the `unirex.error` a template error becomes in CPython `re`:
+/// `PatternError(msg, template, pos)` with the derived line and column.
+fn template_error(py: Python<'_>, template: &Bound<'_, PyAny>, err: &TplErr) -> PyErr {
+    if err.index_error {
+        return pyo3::exceptions::PyIndexError::new_err(err.msg.clone());
+    }
+    let message = format!("{} at position {}", err.msg, err.pos);
+    let ty = py.get_type::<Error>();
+    let instance = match ty.call1((message,)) {
+        Ok(value) => value,
+        Err(err) => return err,
+    };
+    let _ = instance.setattr("msg", &err.msg);
+    let _ = instance.setattr("pattern", template);
+    let _ = instance.setattr("pos", err.pos);
+    let text = template.extract::<String>().ok();
+    let newline_count = text
+        .map(|text| text.chars().take(err.pos).filter(|&c| c == '\n').count())
+        .unwrap_or(0);
+    let _ = instance.setattr("lineno", newline_count + 1);
+    let _ = instance.setattr("colno", err.pos + 1);
+    PyErr::from_value(instance)
 }

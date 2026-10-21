@@ -10,7 +10,7 @@ pub enum Error {
     /// The pattern uses syntax this milestone does not support.
     Unsupported {
         /// A short description of the unsupported construct.
-        what: &'static str,
+        what: String,
         /// Byte offset in the pattern.
         offset: usize,
     },
@@ -29,7 +29,8 @@ impl Error {
     pub fn message(&self) -> String {
         match self {
             Error::Parse(err) => err.to_string(),
-            Error::Unsupported { what, .. } | Error::TooLarge { what, .. } => (*what).to_string(),
+            Error::Unsupported { what, .. } => what.clone(),
+            Error::TooLarge { what, .. } => (*what).to_string(),
         }
     }
 
