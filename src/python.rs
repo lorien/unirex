@@ -187,7 +187,34 @@ impl PyPattern {
     /// `re.findall`. With groups it is a list of group strings, or a list of
     /// tuples of group strings when the pattern has more than one group.
     /// Unmatched groups appear as empty strings, as in `re.findall`.
-    fn findall<'py>(&self, py: Python<'py>, text: &Bound<'_, PyAny>) -> PyResult<Py<PyList>> {
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
+    fn findall<'py>(
+        &self,
+        py: Python<'py>,
+        string: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<Py<PyList>> {
+        self.check_subject(string)?;
+        let _ = endpos;
+        let text = string;
+        if pos != 0 {
+            let text = text.cast::<PyString>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err("windowed findall needs a str subject")
+            })?;
+            let hay = text.to_cow()?.into_owned();
+            let total = hay.chars().count();
+            let end = endpos.unwrap_or(total).min(total);
+            let window: String = hay
+                .chars()
+                .skip(pos)
+                .take(end.saturating_sub(pos))
+                .collect();
+            let slice = PyString::new(py, &window);
+            let inner = self.findall(py, slice.as_any(), 0, None)?;
+            return Ok(inner);
+        }
+
         if let Some(raw) = py_bytes(text) {
             let list = PyList::empty(py);
             let mut scratch = self.take_scratch();
@@ -296,14 +323,16 @@ impl PyPattern {
     }
 
     /// Return the first match at or after `pos`, before `endpos`.
-    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
     fn search(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyAny>,
+        string: &Bound<'_, PyAny>,
         pos: usize,
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
+        let text = string;
+        self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
             if py_bytes(text).is_some() {
                 return Ok(self.bytes_search(py, text, pos, endpos, false, false));
@@ -321,14 +350,16 @@ impl PyPattern {
 
     /// Match only at the start of `text`.
     #[pyo3(name = "match")]
-    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
     fn match_(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyAny>,
+        string: &Bound<'_, PyAny>,
         pos: usize,
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
+        let text = string;
+        self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             if pos != 0 || endpos.is_some() {
                 return Ok(self.bytes_search(py, text, pos, endpos, true, false));
@@ -345,14 +376,16 @@ impl PyPattern {
     }
 
     /// Match the whole of `text`.
-    #[pyo3(signature = (text, pos = 0, endpos = None))]
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
     fn fullmatch(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyAny>,
+        string: &Bound<'_, PyAny>,
         pos: usize,
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
+        let text = string;
+        self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
             if py_bytes(text).is_some() {
                 return Ok(self.bytes_search(py, text, pos, endpos, true, true));
@@ -366,6 +399,52 @@ impl PyPattern {
             .cast::<PyString>()
             .map_err(|_| pyo3::exceptions::PyTypeError::new_err("expected str or bytes"))?;
         self.match_with_position(py, text, true, true)
+    }
+
+    /// Reject mixing a bytes pattern with a str subject and the reverse.
+    fn check_subject(&self, text: &Bound<'_, PyAny>) -> PyResult<()> {
+        if text.cast::<PyBytes>().is_ok() != self.bytes && text.cast::<PyString>().is_ok() {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "cannot use a bytes pattern on a string-like object",
+            ));
+        }
+        if text.cast::<PyBytes>().is_ok() && !self.bytes {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "cannot use a string pattern on a bytes-like object",
+            ));
+        }
+        Ok(())
+    }
+
+    /// `finditer` restricted to `pos..endpos`, by materialising the window.
+    fn finditer_window(
+        &self,
+        py: Python<'_>,
+        text: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<PyFindIter> {
+        let hay = text.cast::<PyString>().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("windowed finditer needs a str subject")
+        })?;
+        let hay = hay.to_cow()?.into_owned();
+        let total = hay.chars().count();
+        let endpos = endpos.unwrap_or(total).min(total);
+        let window: String = hay
+            .chars()
+            .skip(pos)
+            .take(endpos.saturating_sub(pos))
+            .collect();
+        let slice = PyString::new(py, &window);
+        let mut inner = self.finditer(py, slice.as_any(), 0, None)?;
+        for slots in inner.matches.iter_mut() {
+            shift_slots(slots, pos);
+        }
+        let text = text.cast::<PyString>().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("windowed finditer needs a str subject")
+        })?;
+        inner.text = text.clone().unbind();
+        Ok(inner)
     }
 
     /// Windowed search for both subject types.
@@ -629,7 +708,19 @@ impl PyPattern {
     }
 
     /// Iterate over matches, yielding [`PyMatch`] objects.
-    fn finditer(&self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<PyFindIter> {
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
+    fn finditer(
+        &self,
+        py: Python<'_>,
+        string: &Bound<'_, PyAny>,
+        pos: usize,
+        endpos: Option<usize>,
+    ) -> PyResult<PyFindIter> {
+        let text = string;
+        self.check_subject(text)?;
+        if pos != 0 || endpos.is_some() {
+            return self.finditer_window(py, text, pos, endpos);
+        }
         if let Some(raw) = py_bytes(text) {
             let mut scratch = self.take_scratch();
             let width = 2 * (self.inner.group_count() + 1);
@@ -1097,9 +1188,7 @@ fn flags_prefix(flags: u32) -> PyResult<String> {
 #[pyo3(signature = (pattern, flags = 0))]
 fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<PyPattern> {
     if let Ok(existing) = pattern.extract::<PyRef<'_, PyPattern>>() {
-        if flags == 0 {
-            return PyPattern::build(&existing.pattern, existing.flags, existing.bytes);
-        }
+        return PyPattern::build(&existing.pattern, existing.flags, existing.bytes);
     }
     if let Ok(text) = pattern.cast::<PyString>() {
         return PyPattern::with_flags(&text.to_cow()?, flags);
@@ -1144,7 +1233,7 @@ macro_rules! module_iter_fn {
             text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<PyFindIter> {
-            compile_with(flags, pattern)?.finditer(py, text)
+            compile_with(flags, pattern)?.finditer(py, text, 0, None)
         }
     };
 }
@@ -1152,6 +1241,8 @@ macro_rules! module_iter_fn {
 module_fn!(search, search, "search");
 module_fn!(match_fn, match_, "match");
 module_fn!(fullmatch, fullmatch, "fullmatch");
+// Assigned below through the generated wrapper; the module signature keeps the
+// `flags` keyword, so the call passes explicit window defaults.
 module_iter_fn!(finditer, "finditer");
 
 #[pyfunction]
@@ -1162,7 +1253,7 @@ fn findall(
     text: &Bound<'_, PyAny>,
     flags: u32,
 ) -> PyResult<Py<PyList>> {
-    compile_with(flags, pattern)?.findall(py, text)
+    compile_with(flags, pattern)?.findall(py, text, 0, None)
 }
 
 #[pyfunction]
@@ -1610,22 +1701,35 @@ fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(split, m)?)?;
     m.add_function(wrap_pyfunction!(escape, m)?)?;
     m.add_function(wrap_pyfunction!(purge, m)?)?;
-    m.add("NOFLAG", 0u32)?;
-    m.add("IGNORECASE", FLAG_IGNORECASE)?;
-    m.add("I", FLAG_IGNORECASE)?;
-    m.add("LOCALE", FLAG_LOCALE)?;
-    m.add("L", FLAG_LOCALE)?;
-    m.add("MULTILINE", FLAG_MULTILINE)?;
-    m.add("M", FLAG_MULTILINE)?;
-    m.add("DOTALL", FLAG_DOTALL)?;
-    m.add("S", FLAG_DOTALL)?;
-    m.add("UNICODE", FLAG_UNICODE)?;
-    m.add("U", FLAG_UNICODE)?;
-    m.add("VERBOSE", FLAG_VERBOSE)?;
-    m.add("X", FLAG_VERBOSE)?;
-    m.add("DEBUG", FLAG_DEBUG)?;
-    m.add("ASCII", FLAG_ASCII)?;
-    m.add("A", FLAG_ASCII)?;
+    // `re` exposes an IntFlag, not bare ints; build it with the stdlib so
+    // comparisons and `re.RegexFlag(x)` behave the same.
+    let globals = m.dict();
+    let code = std::ffi::CString::new(
+        "import enum as _enum\n\
+         RegexFlag = _enum.IntFlag('RegexFlag', {\n\
+             'NOFLAG': 0, 'TEMPLATE': 1, 'IGNORECASE': 2, 'I': 2, 'LOCALE': 4, 'L': 4,\n\
+             'MULTILINE': 8, 'M': 8, 'DOTALL': 16, 'S': 16, 'UNICODE': 32, 'U': 32,\n\
+             'VERBOSE': 64, 'X': 64, 'DEBUG': 128, 'ASCII': 256, 'A': 256,\n\
+         })\n\
+         NOFLAG, IGNORECASE, I = RegexFlag.NOFLAG, RegexFlag.IGNORECASE, RegexFlag.I\n\
+         LOCALE, L = RegexFlag.LOCALE, RegexFlag.L\n\
+         MULTILINE, M = RegexFlag.MULTILINE, RegexFlag.M\n\
+         DOTALL, S = RegexFlag.DOTALL, RegexFlag.S\n\
+         UNICODE, U = RegexFlag.UNICODE, RegexFlag.U\n\
+         VERBOSE, X = RegexFlag.VERBOSE, RegexFlag.X\n\
+         DEBUG, ASCII, A = RegexFlag.DEBUG, RegexFlag.ASCII, RegexFlag.A\n\
+         del _enum\n",
+    )
+    .expect("flag snippet");
+    unsafe {
+        pyo3::ffi::PyRun_StringFlags(
+            code.as_ptr(),
+            pyo3::ffi::Py_file_input,
+            globals.as_ptr(),
+            globals.as_ptr(),
+            std::ptr::null_mut(),
+        );
+    }
     Ok(())
 }
 

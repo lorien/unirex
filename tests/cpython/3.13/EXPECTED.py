@@ -57,7 +57,6 @@ EXPECTED = {
     "ReTests.test_fail": "unsupported: syntax the parser rejects",
     "ReTests.test_findall_atomic_grouping": "unsupported: syntax the parser rejects",
     "ReTests.test_findall_possessive_quantifiers": "todo: match result differs from re",
-    "ReTests.test_finditer": "todo: pos/endpos parameters are not accepted yet",
     "ReTests.test_flags": "unsupported: ASCII flag is rejected; classes follow CPython's Unicode tables",
     "ReTests.test_fullmatch_atomic_grouping": "unsupported: syntax the parser rejects",
     "ReTests.test_getattr": "todo: match result differs from re",
