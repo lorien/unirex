@@ -114,6 +114,16 @@ impl PyPattern {
         PyPattern::with_flags(pattern, 0)
     }
 
+    /// `copy.copy` returns the same pattern, because patterns are immutable.
+    fn __copy__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// `copy.deepcopy` likewise returns the same pattern.
+    fn __deepcopy__<'py>(slf: PyRef<'py, Self>, _memo: &Bound<'_, PyAny>) -> PyRef<'py, Self> {
+        slf
+    }
+
     /// Support `pickle` and `copy` by rebuilding from the source pattern.
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         let module = py.import("unirex")?;
@@ -129,14 +139,16 @@ impl PyPattern {
     }
 
     /// A cursor over `string`, as in `re.Pattern.scanner`.
-    #[pyo3(signature = (string, pos = 0))]
+    #[pyo3(signature = (string, pos = 0, endpos = None))]
     fn scanner(
         &self,
         py: Python<'_>,
         string: &Bound<'_, PyString>,
         pos: usize,
+        endpos: Option<usize>,
     ) -> PyResult<Py<PyScanner>> {
-        let endpos = string.to_cow().map(|c| c.chars().count()).unwrap_or(0);
+        let total = string.to_cow().map(|c| c.chars().count()).unwrap_or(0);
+        let endpos = endpos.unwrap_or(total).min(total);
         Py::new(
             py,
             PyScanner {
@@ -1809,10 +1821,12 @@ pyo3::create_exception!(
 fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
     let message = err.to_string();
     let bare = err.message();
-    let offset = match err {
+    let byte_offset = match err {
         crate::Error::Parse(inner) => Some(inner.span().start.offset),
         other => other.offset(),
     };
+    // CPython reports character positions; ours are byte offsets.
+    let offset = byte_offset.map(|offset| pattern[..offset.min(pattern.len())].chars().count());
     let ty = py.get_type::<Error>();
     let instance = match ty.call1((message.clone(),)) {
         Ok(value) => value,

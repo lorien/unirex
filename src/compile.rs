@@ -352,6 +352,8 @@ struct Flags {
 
 struct Compiler {
     ascii: bool,
+    /// Nesting depth of groups, used to reject global flags mid-expression.
+    depth: usize,
     flags: Flags,
     /// Inside a `#` comment while verbose mode is active.
     in_comment: bool,
@@ -369,6 +371,7 @@ impl Compiler {
     fn new(ascii: bool) -> Compiler {
         Compiler {
             ascii,
+            depth: 0,
             flags: Flags::default(),
             in_comment: false,
             insts: Vec::new(),
@@ -633,6 +636,13 @@ impl Compiler {
     }
 
     fn compile_group(&mut self, group: &ast::Group) -> Result<(), Error> {
+        self.depth += 1;
+        let result = self.compile_group_inner(group);
+        self.depth -= 1;
+        result
+    }
+
+    fn compile_group_inner(&mut self, group: &ast::Group) -> Result<(), Error> {
         match &group.kind {
             GroupKind::CaptureIndex(index) => {
                 let index = *index as usize;
@@ -651,6 +661,16 @@ impl Compiler {
             GroupKind::NonCapturing(flags) => {
                 if flags.items.is_empty() {
                     return self.compile(&group.ast);
+                }
+                if matches!(group.ast.as_ref(), Ast::Empty(_))
+                    && !self.flags.verbose
+                    && (self.depth > 1 || !self.insts.is_empty())
+                {
+                    // `(?i)` with no body is a global flag form, not `(?i:...)`.
+                    return Err(unsupported(
+                        "global flags not at the start of the expression",
+                        &group.span,
+                    ));
                 }
                 let saved = self.flags;
                 self.apply_flags(&flags.items, &group.span)?;
@@ -691,8 +711,13 @@ impl Compiler {
     }
 
     fn compile_repetition(&mut self, repetition: &ast::Repetition) -> Result<(), Error> {
-        if matches!(repetition.ast.as_ref(), Ast::Repetition(_)) {
-            return Err(unsupported("multiple repeat", &repetition.op.span));
+        if let Ast::Repetition(inner) = repetition.ast.as_ref() {
+            // CPython points at the operator that follows the inner repetition.
+            let end = inner.span.end;
+            return Err(unsupported(
+                "multiple repeat",
+                &Span::new(end, ast::Position::new(end.offset, end.line, end.column)),
+            ));
         }
         if matches!(repetition.ast.as_ref(), Ast::Assertion(_)) {
             return Err(unsupported(
