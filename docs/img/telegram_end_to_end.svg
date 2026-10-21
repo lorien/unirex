@@ -23,16 +23,16 @@
 <text x="514.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">3</text>
 <line x1="730.0" y1="452" x2="730.0" y2="458" stroke="#666666" stroke-width="1"/>
 <text x="730.0" y="477" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#333333">4</text>
-<polyline points="82.0,164.7 298.0,163.2 514.0,153.4 730.0,172.5" fill="none" stroke="#CE422B" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="82.0" cy="164.7" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
-<circle cx="298.0" cy="163.2" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
-<circle cx="514.0" cy="153.4" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
-<circle cx="730.0" cy="172.5" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
-<polyline points="82.0,153.5 298.0,158.7 514.0,153.6 730.0,168.1" fill="none" stroke="#4C72B0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="82.0" cy="153.5" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
-<circle cx="298.0" cy="158.7" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
-<circle cx="514.0" cy="153.6" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
-<circle cx="730.0" cy="168.1" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<polyline points="82.0,126.3 298.0,134.3 514.0,133.3 730.0,169.1" fill="none" stroke="#CE422B" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="82.0" cy="126.3" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="298.0" cy="134.3" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="514.0" cy="133.3" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<circle cx="730.0" cy="169.1" r="4.2" fill="white" stroke="#CE422B" stroke-width="2.2"/>
+<polyline points="82.0,156.8 298.0,160.7 514.0,153.8 730.0,160.6" fill="none" stroke="#4C72B0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="82.0" cy="156.8" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="298.0" cy="160.7" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="514.0" cy="153.8" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
+<circle cx="730.0" cy="160.6" r="4.2" fill="white" stroke="#4C72B0" stroke-width="2.2"/>
 <line x1="756" y1="78" x2="788" y2="78" stroke="#CE422B" stroke-width="2.6"/>
 <circle cx="772" cy="78" r="4" fill="white" stroke="#CE422B" stroke-width="2"/>
 <text x="798" y="82" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#333333">unirex binding</text>

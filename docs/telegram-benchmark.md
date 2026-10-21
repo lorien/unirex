@@ -18,7 +18,7 @@ Real-world task, measured as one `findall(text)` pass over every post in the cor
 - **Rust crate protocol**: each post is scanned exactly once per run with a reused `Scratch`, called directly from `examples/bench.rs`. `ucs` uses the three CPython storage kinds, `bytes` uses Rust `regex::bytes` over UTF-8, and `str` uses Rust `regex` over UTF-8. An independent naive counter runs during loading and every mode must match it.
 - **Core lease and contamination guard**: the whole matrix holds `/tmp/core4.lock`. Each point records CPU time, wall time, load, and per-CPU frequency. Runs below the efficiency floor or above the load limit are rejected and retried; a contaminated run is not published.
 - **Timing window**: load, corpus resolution, pattern compilation, and warm-up are outside the window for both engines. The measured window starts when the barrier releases and stops when the worker's slice is finished.
-- **Repeats**: published numbers are medians of 5 timed passes per point; the raw JSON records every run. Load was 0.35 to 1.27; crate frequency was 4.7 to 4.8 GHz; crate worker efficiency was 1.00. Python frequency samples are kept in the raw JSON as diagnostics.
+- **Repeats**: published numbers are medians of 5 timed passes per point; the raw JSON records every run. Load was 0.31 to 1.34; crate frequency was 4.6 to 4.8 GHz; crate worker efficiency was 1.00. Python frequency samples are kept in the raw JSON as diagnostics.
 - **Interpreter**: CPython 3.13.5 with the GIL. Free-threaded CPython and other interpreter versions are not measured on this page.
 
 ## Unirex python binding vs stdlib re
@@ -29,12 +29,12 @@ Both columns below are Python: the process imports the installed binding as `uni
 
 | Workers | unirex binding median (s) | unirex binding min (s) | re median (s) | re min (s) | unirex/re |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 0.1851 | 0.1830 | 0.1923 | 0.1899 | 0.96 |
-| 2 | 0.1861 | 0.1776 | 0.1890 | 0.1881 | 0.98 |
-| 3 | 0.1924 | 0.1703 | 0.1923 | 0.1670 | 1.00 |
-| 4 | 0.1801 | 0.1617 | 0.1829 | 0.1775 | 0.98 |
+| 1 | 0.2099 | 0.2002 | 0.1902 | 0.1894 | 1.10 |
+| 2 | 0.2047 | 0.1880 | 0.1877 | 0.1869 | 1.09 |
+| 3 | 0.2053 | 0.1806 | 0.1921 | 0.1885 | 1.07 |
+| 4 | 0.1823 | 0.1635 | 0.1877 | 0.1858 | 0.97 |
 
-A ratio below 1 means the binding is faster. At one thread, `unirex` is 0.1851 s median and 0.1830 s minimum; `re` is 0.1923 s median and 0.1899 s minimum. That is 3.8 percent faster at the median and 3.6 percent faster at the minimum.
+A ratio below 1 means the binding is faster. At one thread, `unirex` is 0.2099 s median and 0.2002 s minimum; `re` is 0.1902 s median and 0.1894 s minimum. That is 10.3 percent slower at the median and 5.7 percent slower at the minimum.
 
 The GIL prevents meaningful scaling beyond one thread. The two- to four-worker medians stay close to the one-thread time, and the minimums are noisy because each scan is short and Python result construction is serialized. The one-thread result is the meaningful comparison on this page.
 
@@ -46,14 +46,14 @@ Nothing in this table runs Python. `examples/bench.rs` calls the Rust crate dire
 
 | Workers | unirex crate, UCS (s) | regex bytes (s) | regex str (s) | UCS/bytes |
 |---:|---:|---:|---:|---:|
-| 1 | 0.0690 | 0.0712 | 0.0711 | 0.97 |
-| 2 | 0.0386 | 0.0377 | 0.0378 | 1.02 |
-| 3 | 0.0294 | 0.0266 | 0.0266 | 1.10 |
-| 4 | 0.0258 | 0.0209 | 0.0209 | 1.24 |
+| 1 | 0.0754 | 0.0716 | 0.0723 | 1.05 |
+| 2 | 0.0418 | 0.0378 | 0.0380 | 1.11 |
+| 3 | 0.0314 | 0.0268 | 0.0268 | 1.17 |
+| 4 | 0.0268 | 0.0211 | 0.0209 | 1.27 |
 
-The binding and crate numbers answer different questions. At one thread, UCS is 0.0690 s median versus 0.0712 s for Rust `regex` bytes and 0.0711 s for Rust `regex` str. The UCS path is 3.1 percent faster than the bytes baseline at one thread.
+The binding and crate numbers answer different questions. At one thread, UCS is 0.0754 s median versus 0.0716 s for Rust `regex` bytes and 0.0723 s for Rust `regex` str. The UCS path is 5.2 percent slower than the bytes baseline at one thread.
 
-At four threads the picture changes: UCS is 0.0258 s versus 0.0209 s for bytes and 0.0209 s for str, or 1.24 times the bytes time. The UCS path streams about 913 MB of storage against 470 MB of UTF-8, and each worker keeps its own DFA cache. This is the remaining four-thread scaling gap. It does not change the one-thread binding result.
+At four threads the picture changes: UCS is 0.0268 s versus 0.0211 s for bytes and 0.0209 s for str, or 1.27 times the bytes time. The UCS path streams about 913 MB of storage against 470 MB of UTF-8, and each worker keeps its own DFA cache. This is the remaining four-thread scaling gap. It does not change the one-thread binding result.
 
 ## Reading the numbers
 
@@ -82,4 +82,4 @@ python3 tools/telegram_report.py --results-dir var/bench-results/telegram
 
 ---
 
-*Measured 2026-10-19T00:15:05+00:00 on 13th Gen Intel(R) Core(TM) i5-13500; Python 3.13.5; compiler rustc 1.99.1 (58cf8f9c3 2026-10-13); source workspace snapshot. Raw JSON lives under `var/bench-results/telegram` and is not committed. The standalone HTML twin is generated at `docs/telegram-benchmark.html` and is gitignored.*
+*Measured 2026-10-21T19:48:48+00:00 on 13th Gen Intel(R) Core(TM) i5-13500; Python 3.13.5; compiler rustc 1.99.1 (58cf8f9c3 2026-10-13); source workspace snapshot. Raw JSON lives under `var/bench-results/telegram` and is not committed. The standalone HTML twin is generated at `docs/telegram-benchmark.html` and is gitignored.*

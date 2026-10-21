@@ -55,8 +55,9 @@ The renamed matrix is effectively unchanged:
 
 - [open] Keep the local and remote checkout paths aligned after the owner
   renames the directory.
-- [open] Re-run `tools/telegram_benchmark.py` rather than the individual
-  runners when publishing a new page.
+- [acted] Re-run `tools/telegram_benchmark.py` rather than the individual
+  runners when publishing a new page. Done: the full matrix was re-run on
+  `regexus` on 2026-10-21 and the page regenerated from it.
 - [open] The next planned tasks are CI and Milestone 2; the rename does not
   change their scope.
 

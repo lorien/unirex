@@ -110,35 +110,38 @@ result must be labeled synthetic.
 Machine: Intel Core i5-13500, 14 physical cores, 20 logical threads, Debian,
 Rust 1.99.1, Python 3.13.5. The benchmark used the first four physical P-cores:
 CPUs `0,2,4,6`, one thread per core; SMT siblings `1,3,5,7` stayed idle.
-Governor stayed `powersave`, turbo enabled. Engine frequency was 4.7 GHz to
-4.8 GHz. Load was 0.35 to 1.27 from other work, but per-worker efficiency
-stayed at 1.00. `/tmp/core4.lock` was held for the whole matrix.
+Governor stayed `powersave`, turbo enabled. Engine frequency was 4.6 GHz to
+4.8 GHz. Load was 0.31 to 1.34 from other work; one-thread per-worker
+efficiency was 1.00 and multi-thread points stayed above 0.92.
+`/tmp/core4.lock` was held for the whole matrix. Matrix of 2026-10-21 on
+commit `bb0db84`; the raw JSON under `var/bench-results/telegram/` records
+every run.
 
 Engine-only medians, full corpus, measured by `examples/bench.rs` calling the
 Rust crate directly with no Python involved:
 
-- 1 thread: UCS 0.0690 s, Rust `regex` bytes 0.0712 s, str 0.0711 s.
-- 2 threads: UCS 0.0386 s, bytes 0.0377 s, str 0.0378 s.
-- 3 threads: UCS 0.0294 s, bytes 0.0266 s, str 0.0266 s.
-- 4 threads: UCS 0.0258 s, bytes 0.0209 s, str 0.0209 s.
+- 1 thread: UCS 0.0754 s, Rust `regex` bytes 0.0716 s, str 0.0723 s.
+- 2 threads: UCS 0.0418 s, bytes 0.0378 s, str 0.0380 s.
+- 3 threads: UCS 0.0314 s, bytes 0.0268 s, str 0.0268 s.
+- 4 threads: UCS 0.0268 s, bytes 0.0211 s, str 0.0209 s.
 
-UCS scales 2.67 times from 1 to 4 threads; bytes scales 3.41 times. UCS is
-about 3.1 percent faster than bytes at one thread and 1.24 times slower at
-four. The one-thread result is the parity target; four-thread UCS scaling is
+UCS scales 2.81 times from 1 to 4 threads; bytes scales 3.40 times. UCS is
+1.05 times slower than bytes at one thread and 1.27 times slower at four.
+The one-thread result is the parity target; four-thread UCS scaling is
 limited by each worker scanning wider UCS storage and keeping its own DFA
 cache.
 
 End-to-end Python, same CPU lists, GIL, measured by `tools/bench_python.py`
 importing the installed python binding into a Python process:
 
-- 1 thread: `unirex` 0.1851 s median, 0.1830 s minimum; CPython `re`
-  0.1923 s median, 0.1899 s minimum.
-- 2 threads: `unirex` 0.1861 s median, 0.1776 s minimum; `re` 0.1890 s
-  median, 0.1881 s minimum.
-- 3 threads: `unirex` 0.1924 s median, 0.1703 s minimum; `re` 0.1923 s
-  median, 0.1670 s minimum.
-- 4 threads: `unirex` 0.1801 s median, 0.1617 s minimum; `re` 0.1829 s
-  median, 0.1775 s minimum.
+- 1 thread: `unirex` 0.2099 s median, 0.2002 s minimum; CPython `re`
+  0.1902 s median, 0.1894 s minimum.
+- 2 threads: `unirex` 0.2047 s median, 0.1880 s minimum; `re` 0.1877 s
+  median, 0.1869 s minimum.
+- 3 threads: `unirex` 0.2053 s median, 0.1806 s minimum; `re` 0.1921 s
+  median, 0.1885 s minimum.
+- 4 threads: `unirex` 0.1823 s median, 0.1635 s minimum; `re` 0.1877 s
+  median, 0.1858 s minimum.
 
 Naming rule for result tables: never write a bare `unirex` in a column header
 or chart legend. Name the interface, `unirex binding` for the python binding or
@@ -147,11 +150,26 @@ or chart legend. Name the interface, `unirex binding` for the python binding or
 corpus but their numbers are not comparable.
 
 The GIL prevents meaningful scaling beyond one thread, so the 1-thread result
-is the end-to-end target. `unirex` is 3.8 percent faster than CPython `re`
-at the median and 3.6 percent faster at the minimum. The 2-4 thread medians
+is the end-to-end target. `unirex` is 10.3 percent slower than CPython `re`
+at the median and 5.7 percent slower at the minimum. The 2-4 thread medians
 are noisy because the Python runs do not keep the cores at a stable frequency;
 they are reported for completeness, not as scaling evidence. This CPU is much
 faster than the original laptop baseline, and no `rurex` engine was run.
+
+### What changed against the previous matrix
+
+The previous matrix was generated before capture extraction landed, so this
+page moved with the engine, not with the machine. A same-host A/B at the UCS
+one-thread point, with the `regex` baselines flat between builds, shows:
+
+- `bd0b993` (previous matrix engine): UCS 0.0698 s.
+- `8380c85` (capture extraction, ADR-0017) and every later commit, including
+  `bb0db84`: UCS 0.0753 s to 0.0764 s.
+
+So capture extraction costs about 9 percent on the engine-only scan, which
+flipped both ratios: UCS went from slightly faster than `regex` bytes to 1.05
+times slower, and the binding went from 3.8 percent faster than `re` to 10.3
+percent slower. Recovering that margin is engine work, not measurement work.
 
 ## Historical laptop results
 
