@@ -1717,6 +1717,7 @@ pyo3::create_exception!(
 /// Build a `unirex.error` carrying the same attributes as `re.error`.
 fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
     let message = err.to_string();
+    let bare = err.message();
     let offset = match err {
         crate::Error::Parse(inner) => Some(inner.span().start.offset),
         other => other.offset(),
@@ -1726,7 +1727,7 @@ fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
         Ok(value) => value,
         Err(err) => return err,
     };
-    let _ = instance.setattr("msg", message);
+    let _ = instance.setattr("msg", bare);
     let _ = instance.setattr("pattern", pattern);
     let _ = instance.setattr("pos", offset);
     let _ = instance.setattr("lineno", 1);

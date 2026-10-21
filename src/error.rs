@@ -24,6 +24,15 @@ pub enum Error {
 }
 
 impl Error {
+    /// The bare message, without the position suffix that `re.error` keeps in
+    /// `str()` but not in `.msg`.
+    pub fn message(&self) -> String {
+        match self {
+            Error::Parse(err) => err.to_string(),
+            Error::Unsupported { what, .. } | Error::TooLarge { what, .. } => (*what).to_string(),
+        }
+    }
+
     /// The byte offset in the pattern, when known.
     pub fn offset(&self) -> Option<usize> {
         match self {
