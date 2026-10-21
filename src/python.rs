@@ -653,13 +653,14 @@ impl PyPattern {
     }
 
     /// Split `text` on matches, keeping capture groups.
-    #[pyo3(signature = (text, maxsplit = 0))]
+    #[pyo3(signature = (string, maxsplit = 0))]
     fn split(
         &self,
         py: Python<'_>,
-        text: &Bound<'_, PyAny>,
+        string: &Bound<'_, PyAny>,
         maxsplit: isize,
     ) -> PyResult<Py<PyList>> {
+        let text = string;
         self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             return self.split_bytes(py, raw, maxsplit);
@@ -1536,9 +1537,11 @@ fn resolve_index_with(
                 pyo3::exceptions::PyIndexError::new_err(format!("no such group: {name}"))
             });
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
-        "group index must be an int or a str",
-    ))
+    if index.is_instance_of::<pyo3::types::PyInt>() {
+        // Values beyond isize raise IndexError in re, not TypeError.
+        return Err(pyo3::exceptions::PyIndexError::new_err("no such group"));
+    }
+    Err(pyo3::exceptions::PyIndexError::new_err("no such group"))
 }
 
 impl PyMatch {
@@ -1623,11 +1626,20 @@ impl PyMatch {
         Ok(PyTuple::new(py, values)?.into_any().unbind())
     }
 
-    fn groups<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
+    #[pyo3(signature = (default = None))]
+    fn groups<'py>(
+        &self,
+        py: Python<'py>,
+        default: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyTuple>> {
         let count = self.slots.len() / 2;
         let mut items: Vec<Option<Py<PyAny>>> = Vec::with_capacity(count.saturating_sub(1));
         for index in 1..count {
-            items.push(self.value(py, index)?);
+            let value = self.value(py, index)?;
+            items.push(match (value, default) {
+                (None, Some(fallback)) => Some(fallback.clone().unbind()),
+                (value, _) => value,
+            });
         }
         Ok(PyTuple::new(py, items)?.unbind())
     }
