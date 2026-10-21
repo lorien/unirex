@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.14t", "3.15t"]
+        python-version: ["3.10", "3.11", "3.12", "3.13.5", "3.14", "3.15", "3.14t", "3.15t"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,6 +87,9 @@ jobs:
       # the gap is visible instead of hidden behind a version condition.
       - name: CPython conformance suite
         run: |
+          # The vendored suite is CPython 3.13.5's own test_re.py, so the 3.13
+          # leg is pinned to that patch release: its assertions track the exact
+          # upstream behaviour, not the 3.13 minor version.
           version=$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
           if [ -f "tests/cpython/$version/EXPECTED.py" ]; then
             python -m pytest "tests/cpython/$version/vendored_test_re.py" -q --tb=short
