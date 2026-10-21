@@ -122,15 +122,31 @@ impl Pattern {
         m: Match,
         slots: &mut [usize],
     ) -> bool {
+        self.captures_with_last(scratch, hay, m, slots, &mut None)
+    }
+
+    /// As [`Pattern::captures`], also reporting the last group that closed.
+    ///
+    /// `last` receives the index of the group whose end slot was written last,
+    /// which is what `re.Match.lastindex` reports and is not the same as the
+    /// highest group index.
+    pub fn captures_with_last(
+        &self,
+        scratch: &mut Scratch,
+        hay: Ucs<'_>,
+        m: Match,
+        slots: &mut [usize],
+        last: &mut Option<usize>,
+    ) -> bool {
         match hay {
             Ucs::Ucs1(units) => {
-                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots, last)
             }
             Ucs::Ucs2(units) => {
-                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots, last)
             }
             Ucs::Ucs4(units) => {
-                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots)
+                pikevm::capture_slots(&self.prog, scratch, units, m.start, m.end, slots, last)
             }
         }
     }

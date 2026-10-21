@@ -629,7 +629,8 @@ impl PyPattern {
             } else {
                 let template: Vec<u8> = repl.extract()?;
                 let template: String = template.iter().map(|&byte| byte as char).collect();
-                let expanded = expand_replacement(&template, &hay, slots, &names);
+                let expanded = expand_replacement(&template, &hay, slots, &names)
+                    .map_err(pyo3::exceptions::PyValueError::new_err)?;
                 out.extend(expanded.chars().map(|ch| ch as u8));
             }
             previous = end;
@@ -796,7 +797,14 @@ impl PyPattern {
                     && (!anchored_end || found.end() == ucs.len());
                 if ok {
                     let mut slots = vec![usize::MAX; width];
-                    if self.inner.captures(&mut scratch, ucs, found, &mut slots) {
+                    let mut last = None;
+                    if self.inner.captures_with_last(
+                        &mut scratch,
+                        ucs,
+                        found,
+                        &mut slots,
+                        &mut last,
+                    ) {
                         Some(Py::new(
                             py,
                             PyMatch {
@@ -809,6 +817,7 @@ impl PyPattern {
                                 flags: self.flags,
                                 pos: 0,
                                 endpos: ucs.len(),
+                                last_index: last,
                             },
                         )?)
                     } else {
@@ -885,6 +894,7 @@ impl PyPattern {
                         flags: self.flags,
                         pos: 0,
                         endpos: text.to_cow().map(|c| c.chars().count()).unwrap_or(0),
+                        last_index: None,
                     },
                 )?;
                 let out = repl.call1((m,))?;
@@ -892,6 +902,7 @@ impl PyPattern {
             } else {
                 let template = repl.extract::<String>()?;
                 expand_replacement(&template, &hay, slots, &names)
+                    .map_err(pyo3::exceptions::PyValueError::new_err)?
             };
             pieces.push(value);
             previous = end;
@@ -1091,6 +1102,7 @@ fn bytes_match(
             flags,
             pos: 0,
             endpos: raw.len(),
+            last_index: None,
         },
     )
 }
@@ -1453,6 +1465,7 @@ pub struct PyMatch {
     flags: u32,
     pos: usize,
     endpos: usize,
+    last_index: Option<usize>,
 }
 
 /// As [`resolve_index`], rejecting indices beyond `groups`.
@@ -1616,9 +1629,8 @@ impl PyMatch {
     /// Index of the last group that matched, or `None`.
     #[getter]
     fn lastindex(&self) -> Option<usize> {
-        (1..(self.slots.len() / 2))
-            .rev()
-            .find(|&index| self.span_of(index).is_some())
+        self.last_index
+            .filter(|index| self.span_of(*index).is_some())
     }
 
     /// Name of the last group that matched, when it has one.
@@ -1643,13 +1655,15 @@ impl PyMatch {
             let template: &[u8] = template.extract()?;
             let text: String = template.iter().map(|&byte| byte as char).collect();
             let hay: String = self.raw.iter().map(|&byte| byte as char).collect();
-            let expanded = expand_replacement(&text, &hay, &self.slots, &self.names);
+            let expanded = expand_replacement(&text, &hay, &self.slots, &self.names)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
             let raw: Vec<u8> = expanded.chars().map(|ch| ch as u8).collect();
             return Ok(PyBytes::new(py, &raw).into_any().unbind());
         }
         let hay = self.text.bind(py).to_cow()?.into_owned();
         let template = template.extract::<String>()?;
-        let expanded = expand_replacement(&template, &hay, &self.slots, &self.names);
+        let expanded = expand_replacement(&template, &hay, &self.slots, &self.names)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(PyString::new(py, &expanded).into_any().unbind())
     }
 
@@ -1700,6 +1714,7 @@ impl PyFindIter {
                     flags: slf.flags,
                     pos: 0,
                     endpos: slf.endpos,
+                    last_index: None,
                 },
             )
             .expect("Match construction cannot fail"),
@@ -1812,7 +1827,7 @@ fn expand_replacement(
     hay: &str,
     slots: &[usize],
     names: &[(String, usize)],
-) -> String {
+) -> Result<String, String> {
     let mut out = String::new();
     let mut chars = template.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -1841,13 +1856,19 @@ fn expand_replacement(
                     .parse::<usize>()
                     .ok()
                     .or_else(|| names.iter().find(|(n, _)| *n == name).map(|(_, i)| *i));
-                if let Some(index) = index {
-                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
-                    {
-                        if lo != usize::MAX && hi != usize::MAX {
-                            out.push_str(&char_slice(hay, lo, hi));
+                match index {
+                    Some(index) => {
+                        if let (Some(&lo), Some(&hi)) =
+                            (slots.get(2 * index), slots.get(2 * index + 1))
+                        {
+                            if lo != usize::MAX && hi != usize::MAX {
+                                out.push_str(&char_slice(hay, lo, hi));
+                            }
+                        } else {
+                            return Err(format!("invalid group reference {index}"));
                         }
                     }
+                    None => return Err("invalid group reference".to_string()),
                 }
             }
             Some('a') => {
@@ -1924,6 +1945,8 @@ fn expand_replacement(
                         if lo != usize::MAX && hi != usize::MAX {
                             out.push_str(&char_slice(hay, lo, hi));
                         }
+                    } else {
+                        return Err(format!("invalid group reference {index}"));
                     }
                 }
             }
@@ -1934,5 +1957,5 @@ fn expand_replacement(
             None => out.push('\\'),
         }
     }
-    out
+    Ok(out)
 }

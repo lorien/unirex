@@ -499,12 +499,6 @@ impl Compiler {
                 // In verbose mode Python allows global flags after whitespace
                 // and comments have been stripped, so the position check only
                 // applies to normal mode.
-                if !self.insts.is_empty() && !self.flags.verbose {
-                    return Err(unsupported(
-                        "global flags not at the start of the expression",
-                        &flags.span,
-                    ));
-                }
                 self.apply_flags(&flags.flags.items, &flags.span)?;
                 Ok(())
             }

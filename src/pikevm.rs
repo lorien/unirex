@@ -212,6 +212,8 @@ pub(crate) struct CapLists {
     stack: Vec<(usize, usize)>,
     width: usize,
     matched: Vec<usize>,
+    /// Index of the group whose end slot was written last, per thread list.
+    last_index: Option<usize>,
 }
 
 impl CapLists {
@@ -225,6 +227,7 @@ impl CapLists {
             stack: Vec::new(),
             width: 0,
             matched: Vec::new(),
+            last_index: None,
         }
     }
 
@@ -280,6 +283,7 @@ pub(crate) fn capture_slots<U: Unit>(
     start: usize,
     end: usize,
     slots: &mut [usize],
+    last: &mut Option<usize>,
 ) -> bool {
     let width = 2 * (prog.groups + 1);
     if slots.len() < width || start > end || end > hay.len() {
@@ -289,13 +293,13 @@ pub(crate) fn capture_slots<U: Unit>(
     slots[0] = start;
     slots[1] = end;
     let mut trail = std::mem::take(&mut scratch.trail);
-    let matched = backtrack_slots(prog, hay, start, end, slots, &mut trail);
+    let matched = backtrack_slots(prog, hay, start, end, slots, &mut trail, last);
     trail.clear();
     scratch.trail = trail;
     if matched {
         return true;
     }
-    capture_slots_pike(prog, scratch, hay, start, end, slots)
+    capture_slots_pike(prog, scratch, hay, start, end, slots, last)
 }
 
 /// Bounded backtracking capture extraction over a known span.
@@ -340,6 +344,7 @@ fn backtrack_slots<U: Unit>(
     end: usize,
     slots: &mut [usize],
     trail: &mut Vec<(usize, usize)>,
+    last: &mut Option<usize>,
 ) -> bool {
     let span = end - start;
     if span > MAX_BACKTRACK_SPAN {
@@ -352,6 +357,8 @@ fn backtrack_slots<U: Unit>(
         end,
         slots,
         trail,
+        last,
+        last_trail: Vec::new(),
         steps: 0,
         budget,
         aborted: false,
@@ -366,6 +373,8 @@ struct Backtrack<'a, U: Unit> {
     end: usize,
     slots: &'a mut [usize],
     trail: &'a mut Vec<(usize, usize)>,
+    last: &'a mut Option<usize>,
+    last_trail: Vec<Option<usize>>,
     steps: usize,
     budget: usize,
     aborted: bool,
@@ -376,6 +385,9 @@ impl<U: Unit> Backtrack<'_, U> {
         while self.trail.len() > mark {
             let (slot, old) = self.trail.pop().expect("trail length checked");
             self.slots[slot] = old;
+            if let Some(previous) = self.last_trail.pop() {
+                *self.last = previous;
+            }
         }
     }
 
@@ -412,6 +424,12 @@ impl<U: Unit> Backtrack<'_, U> {
             }
             Inst::Jump(target) => self.step(target, pos, depth + 1),
             Inst::Save(slot) => {
+                if slot % 2 == 1 && slot > 1 {
+                    self.last_trail.push(*self.last);
+                    *self.last = Some(slot / 2);
+                } else {
+                    self.last_trail.push(*self.last);
+                }
                 let old = self.slots[slot];
                 self.slots[slot] = pos;
                 self.trail.push((slot, old));
@@ -438,6 +456,7 @@ fn capture_slots_pike<U: Unit>(
     start: usize,
     end: usize,
     slots: &mut [usize],
+    last: &mut Option<usize>,
 ) -> bool {
     let width = 2 * (prog.groups + 1);
     if slots.len() < width || start > end || end > hay.len() {
@@ -496,6 +515,7 @@ fn capture_slots_pike<U: Unit>(
                 }
                 Inst::Match => {
                     if pos == end {
+                        *last = cap.last_index;
                         found = Some(index);
                         stop = true;
                         break;
@@ -561,6 +581,9 @@ fn close_with_slots<U: Unit>(
             }
             Inst::Jump(target) => cap.stack.push((target, offset)),
             Inst::Save(slot) => {
+                if slot % 2 == 1 && slot > 1 {
+                    cap.last_index = Some(slot / 2);
+                }
                 cap.arena[offset + slot] = pos;
                 if pc + 1 < prog.insts.len() {
                     cap.stack.push((pc + 1, offset));
@@ -722,7 +745,8 @@ mod tests {
                 hay,
                 found.start(),
                 found.end(),
-                &mut slots
+                &mut slots,
+                &mut None,
             ),
             "capture pass failed for {pattern:?}"
         );
@@ -834,7 +858,8 @@ mod tests {
                 &hay,
                 found.start(),
                 found.end(),
-                &mut slots
+                &mut slots,
+                &mut None,
             ),
             "fallback produced no slots"
         );
@@ -883,10 +908,18 @@ mod tests {
             };
             let bt = time(200, || {
                 let mut s = vec![usize::MAX; width];
-                backtrack_slots(&program, hay2, start, end, &mut s, &mut trail);
+                backtrack_slots(&program, hay2, start, end, &mut s, &mut trail, &mut None);
             });
             let pike = time(20, || {
-                capture_slots_pike(&program, &mut scratch, hay2, start, end, &mut slots);
+                capture_slots_pike(
+                    &program,
+                    &mut scratch,
+                    hay2,
+                    start,
+                    end,
+                    &mut slots,
+                    &mut None,
+                );
             });
             println!("span={span:>7} pattern={pattern:35} backtrack={bt:>10?} pike={pike:>10?}");
         }
@@ -906,7 +939,8 @@ mod tests {
             &hay,
             found.start(),
             found.end(),
-            &mut slots
+            &mut slots,
+            &mut None,
         ));
         assert_eq!(slots, vec![2, 6, 2, 5, 5, 6]);
     }
