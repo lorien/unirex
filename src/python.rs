@@ -560,6 +560,7 @@ impl PyPattern {
         text: &Bound<'_, PyAny>,
         count: usize,
     ) -> PyResult<Py<PyAny>> {
+        self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             return self
                 .sub_bytes(py, raw, repl, count, false)
@@ -581,6 +582,7 @@ impl PyPattern {
         text: &Bound<'_, PyAny>,
         count: usize,
     ) -> PyResult<(Py<PyAny>, usize)> {
+        self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             return self.sub_bytes(py, raw, repl, count, true);
         }
@@ -645,6 +647,7 @@ impl PyPattern {
         text: &Bound<'_, PyAny>,
         maxsplit: isize,
     ) -> PyResult<Py<PyList>> {
+        self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             return self.split_bytes(py, raw, maxsplit);
         }
@@ -1416,7 +1419,12 @@ pub struct PyMatch {
     endpos: usize,
 }
 
-fn resolve_index(names: &[(String, usize)], index: Option<&Bound<'_, PyAny>>) -> PyResult<usize> {
+/// As [`resolve_index`], rejecting indices beyond `groups`.
+fn resolve_index_with(
+    names: &[(String, usize)],
+    index: Option<&Bound<'_, PyAny>>,
+    groups: usize,
+) -> PyResult<usize> {
     let Some(index) = index else {
         return Ok(0);
     };
@@ -1426,7 +1434,11 @@ fn resolve_index(names: &[(String, usize)], index: Option<&Bound<'_, PyAny>>) ->
                 "no such group: negative index",
             ));
         }
-        return Ok(number as usize);
+        let number = number as usize;
+        if number > groups {
+            return Err(pyo3::exceptions::PyIndexError::new_err("no such group"));
+        }
+        return Ok(number);
     }
     if let Ok(name) = index.extract::<String>() {
         return names
@@ -1472,7 +1484,7 @@ impl PyMatch {
 impl PyMatch {
     #[pyo3(signature = (index = None))]
     fn span(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<(isize, isize)> {
-        let index = resolve_index(&self.names, index)?;
+        let index = resolve_index_with(&self.names, index, self.slots.len() / 2 - 1)?;
         // Python reports `(-1, -1)` for a group that did not participate.
         Ok(match self.span_of(index) {
             Some((start, end)) => (start as isize, end as isize),
@@ -1482,13 +1494,13 @@ impl PyMatch {
 
     #[pyo3(signature = (index = None))]
     fn start(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<isize> {
-        let index = resolve_index(&self.names, index)?;
+        let index = resolve_index_with(&self.names, index, self.slots.len() / 2 - 1)?;
         Ok(self.span_of(index).map_or(-1, |(start, _)| start as isize))
     }
 
     #[pyo3(signature = (index = None))]
     fn end(&self, index: Option<&Bound<'_, PyAny>>) -> PyResult<isize> {
-        let index = resolve_index(&self.names, index)?;
+        let index = resolve_index_with(&self.names, index, self.slots.len() / 2 - 1)?;
         Ok(self.span_of(index).map_or(-1, |(_, end)| end as isize))
     }
 
@@ -1501,7 +1513,11 @@ impl PyMatch {
             });
         }
         if indices.len() == 1 {
-            let index = resolve_index(&self.names, Some(indices.get_item(0)?.as_any()))?;
+            let index = resolve_index_with(
+                &self.names,
+                Some(indices.get_item(0)?.as_any()),
+                self.slots.len() / 2 - 1,
+            )?;
             return Ok(match self.value(py, index)? {
                 Some(value) => value,
                 None => py.None(),
@@ -1510,7 +1526,8 @@ impl PyMatch {
         let mut values: Vec<Py<PyAny>> = Vec::with_capacity(indices.len());
         for position in 0..indices.len() {
             let item = indices.get_item(position)?;
-            let index = resolve_index(&self.names, Some(item.as_any()))?;
+            let index =
+                resolve_index_with(&self.names, Some(item.as_any()), self.slots.len() / 2 - 1)?;
             values.push(match self.value(py, index)? {
                 Some(value) => value,
                 None => py.None(),
