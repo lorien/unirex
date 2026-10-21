@@ -37,12 +37,8 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Parse(err) => write!(f, "regex parse error: {err}"),
-            Error::Unsupported { what, offset } => {
-                write!(f, "unsupported syntax at offset {offset}: {what}")
-            }
-            Error::TooLarge { what, offset } => {
-                write!(f, "pattern too large at offset {offset}: {what}")
-            }
+            Error::Unsupported { what, offset } => write!(f, "{what} at position {offset}"),
+            Error::TooLarge { what, offset } => write!(f, "{what} at position {offset}"),
         }
     }
 }

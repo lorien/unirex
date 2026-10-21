@@ -1352,7 +1352,13 @@ impl PyScanner {
 #[pyfunction]
 fn escape<'py>(py: Python<'py>, text: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     if let Ok(raw) = text.cast::<PyBytes>() {
-        let escaped: Vec<u8> = escape_str(&String::from_utf8_lossy(raw.as_bytes())).into_bytes();
+        let mut escaped = Vec::with_capacity(raw.as_bytes().len() * 2);
+        for &byte in raw.as_bytes() {
+            if is_special_escape(byte as char) {
+                escaped.push(b'\\');
+            }
+            escaped.push(byte);
+        }
         return Ok(PyBytes::new(py, &escaped).into_any().unbind());
     }
     let text = text
@@ -1361,6 +1367,36 @@ fn escape<'py>(py: Python<'py>, text: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> 
     Ok(PyString::new(py, &escape_str(&text.to_cow()?))
         .into_any()
         .unbind())
+}
+
+/// Characters `re.escape` prefixes with a backslash.
+fn is_special_escape(ch: char) -> bool {
+    matches!(
+        ch,
+        '(' | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '?'
+            | '*'
+            | '+'
+            | '-'
+            | '|'
+            | '^'
+            | '$'
+            | '\\'
+            | '.'
+            | '&'
+            | '~'
+            | '#'
+            | ' '
+            | '\t'
+            | '\n'
+            | '\r'
+            | '\x0b'
+            | '\x0c'
+    )
 }
 
 fn escape_str(text: &str) -> String {
@@ -1735,6 +1771,8 @@ fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
          UNICODE, U = RegexFlag.UNICODE, RegexFlag.U\n\
          VERBOSE, X = RegexFlag.VERBOSE, RegexFlag.X\n\
          DEBUG, ASCII, A = RegexFlag.DEBUG, RegexFlag.ASCII, RegexFlag.A\n\
+         RegexFlag.__repr__ = lambda self: (f're.{self.name}' if self.name else f're.RegexFlag({int(self)})')\n\
+         RegexFlag.__str__ = RegexFlag.__repr__\n\
          del _enum\n",
     )
     .expect("flag snippet");
@@ -1811,10 +1849,35 @@ fn expand_replacement(
                     }
                 }
             }
+            Some('0') => {
+                let mut value = 0u32;
+                let mut digits = 0;
+                while digits < 3 {
+                    match chars.peek().copied() {
+                        Some(digit) if digit.is_digit(8) => {
+                            value = value * 8 + digit.to_digit(8).unwrap_or(0);
+                            chars.next();
+                            digits += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                if let Some(ch) = char::from_u32(value) {
+                    out.push(ch);
+                }
+            }
             Some(digit) if digit.is_ascii_digit() => {
-                chars.next();
-                if let Some(index) = digit.to_digit(10) {
-                    let index = index as usize;
+                let mut index = 0usize;
+                while let Some(d) = chars.peek().copied() {
+                    match d.to_digit(10) {
+                        Some(value) => {
+                            index = index * 10 + value as usize;
+                            chars.next();
+                        }
+                        None => break,
+                    }
+                }
+                if let Some(index) = Some(index) {
                     if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
                     {
                         if lo != usize::MAX && hi != usize::MAX {
@@ -1823,13 +1886,52 @@ fn expand_replacement(
                     }
                 }
             }
+            Some('a') => {
+                chars.next();
+                out.push('\x07');
+            }
+            Some('b') => {
+                // In a replacement template `\b` is a backspace.
+                chars.next();
+                out.push('\x08');
+            }
+            Some('f') => {
+                chars.next();
+                out.push('\x0c');
+            }
             Some('n') => {
                 chars.next();
                 out.push('\n');
             }
+            Some('r') => {
+                chars.next();
+                out.push('\r');
+            }
             Some('t') => {
                 chars.next();
                 out.push('\t');
+            }
+            Some('v') => {
+                chars.next();
+                out.push('\x0b');
+            }
+            Some(first) if first.is_digit(8) => {
+                // Octal escapes up to three digits, as in re's templates.
+                let mut value = 0u32;
+                let mut digits = 0;
+                while digits < 3 {
+                    match chars.peek().copied() {
+                        Some(digit) if digit.is_digit(8) => {
+                            value = value * 8 + digit.to_digit(8).unwrap_or(0);
+                            chars.next();
+                            digits += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                if let Some(ch) = char::from_u32(value) {
+                    out.push(ch);
+                }
             }
             Some(other) => {
                 chars.next();

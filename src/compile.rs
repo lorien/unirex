@@ -498,7 +498,7 @@ impl Compiler {
             Ast::Flags(flags) => {
                 if !self.insts.is_empty() {
                     return Err(unsupported(
-                        "global flags outside the start of the pattern",
+                        "global flags not at the start of the expression",
                         &flags.span,
                     ));
                 }
@@ -691,6 +691,9 @@ impl Compiler {
     }
 
     fn compile_repetition(&mut self, repetition: &ast::Repetition) -> Result<(), Error> {
+        if matches!(repetition.ast.as_ref(), Ast::Repetition(_)) {
+            return Err(unsupported("multiple repeat", &repetition.op.span));
+        }
         if matches!(repetition.ast.as_ref(), Ast::Assertion(_)) {
             return Err(unsupported(
                 "repetition of an assertion",
