@@ -58,7 +58,7 @@ impl PyPattern {
             format!("{prefix}{pattern}")
         };
         let compiled = if bytes {
-            CorePattern::new_bytes(source.as_bytes())
+            CorePattern::new_bytes(&source.chars().map(|ch| ch as u8).collect::<Vec<u8>>())
         } else {
             CorePattern::new(&source)
         };
@@ -1850,43 +1850,6 @@ fn expand_replacement(
                     }
                 }
             }
-            Some('0') => {
-                let mut value = 0u32;
-                let mut digits = 0;
-                while digits < 3 {
-                    match chars.peek().copied() {
-                        Some(digit) if digit.is_digit(8) => {
-                            value = value * 8 + digit.to_digit(8).unwrap_or(0);
-                            chars.next();
-                            digits += 1;
-                        }
-                        _ => break,
-                    }
-                }
-                if let Some(ch) = char::from_u32(value) {
-                    out.push(ch);
-                }
-            }
-            Some(digit) if digit.is_ascii_digit() => {
-                let mut index = 0usize;
-                while let Some(d) = chars.peek().copied() {
-                    match d.to_digit(10) {
-                        Some(value) => {
-                            index = index * 10 + value as usize;
-                            chars.next();
-                        }
-                        None => break,
-                    }
-                }
-                if let Some(index) = Some(index) {
-                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
-                    {
-                        if lo != usize::MAX && hi != usize::MAX {
-                            out.push_str(&char_slice(hay, lo, hi));
-                        }
-                    }
-                }
-            }
             Some('a') => {
                 chars.next();
                 out.push('\x07');
@@ -1916,8 +1879,7 @@ fn expand_replacement(
                 chars.next();
                 out.push('\x0b');
             }
-            Some(first) if first.is_digit(8) => {
-                // Octal escapes up to three digits, as in re's templates.
+            Some('0') => {
                 let mut value = 0u32;
                 let mut digits = 0;
                 while digits < 3 {
@@ -1932,6 +1894,37 @@ fn expand_replacement(
                 }
                 if let Some(ch) = char::from_u32(value) {
                     out.push(ch);
+                }
+            }
+            Some(digit) if digit.is_ascii_digit() => {
+                // CPython: a leading `0` is always octal (up to three digits);
+                // otherwise one or two digits are a group reference and three
+                // octal digits are an octal escape.
+                let mut digits = String::new();
+                digits.push(digit);
+                chars.next();
+                while digits.len() < 3 {
+                    match chars.peek().copied() {
+                        Some(next) if next.is_digit(8) => {
+                            digits.push(next);
+                            chars.next();
+                        }
+                        _ => break,
+                    }
+                }
+                let octal = digit == '0' || digits.len() == 3;
+                if octal {
+                    let value = u32::from_str_radix(&digits, 8).unwrap_or(0);
+                    if let Some(ch) = char::from_u32(value) {
+                        out.push(ch);
+                    }
+                } else if let Ok(index) = digits.parse::<usize>() {
+                    if let (Some(&lo), Some(&hi)) = (slots.get(2 * index), slots.get(2 * index + 1))
+                    {
+                        if lo != usize::MAX && hi != usize::MAX {
+                            out.push_str(&char_slice(hay, lo, hi));
+                        }
+                    }
                 }
             }
             Some(other) => {
