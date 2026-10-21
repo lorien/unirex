@@ -104,7 +104,12 @@ def main() -> int:
             continue
         test_id, message = line.split("\t", 1)
         key = test_id.replace("::", ".")
-        entries.setdefault(key, OVERRIDES.get(key, bucket(message)))
+        derived = bucket(message)
+        if derived.startswith("todo: unclassified"):
+            # Only fall back to the hand-written table when the message is not
+            # informative, otherwise a stale override hides a changed failure.
+            derived = OVERRIDES.get(key, derived)
+        entries.setdefault(key, derived)
     lines = [
         f'"""Conformance ledger for the CPython {VERSION} suite.',
         "",

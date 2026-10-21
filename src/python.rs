@@ -195,6 +195,9 @@ impl PyPattern {
         pos: usize,
         endpos: Option<usize>,
     ) -> PyResult<Py<PyList>> {
+        if let Some(converted) = as_byte_subject(py, string)? {
+            return self.findall(py, converted.as_any(), pos, endpos);
+        }
         self.check_subject(string)?;
         let _ = endpos;
         let text = string;
@@ -332,6 +335,9 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
+        if let Some(converted) = as_byte_subject(py, text)? {
+            return self.search(py, converted.as_any(), pos, endpos);
+        }
         self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
             if py_bytes(text).is_some() {
@@ -359,6 +365,9 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
+        if let Some(converted) = as_byte_subject(py, text)? {
+            return self.match_(py, converted.as_any(), pos, endpos);
+        }
         self.check_subject(text)?;
         if let Some(raw) = py_bytes(text) {
             if pos != 0 || endpos.is_some() {
@@ -385,6 +394,9 @@ impl PyPattern {
         endpos: Option<usize>,
     ) -> PyResult<Option<Py<PyMatch>>> {
         let text = string;
+        if let Some(converted) = as_byte_subject(py, text)? {
+            return self.search(py, converted.as_any(), pos, endpos);
+        }
         self.check_subject(text)?;
         if pos != 0 || endpos.is_some() {
             if py_bytes(text).is_some() {
@@ -1201,25 +1213,39 @@ fn flags_prefix(flags: u32) -> PyResult<String> {
 
 #[pyfunction]
 #[pyo3(signature = (pattern, flags = 0))]
-fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<PyPattern> {
-    if let Ok(existing) = pattern.extract::<PyRef<'_, PyPattern>>() {
-        return PyPattern::build(&existing.pattern, existing.flags, existing.bytes);
+fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<Py<PyPattern>> {
+    // A compiled pattern is returned unchanged, so `re.compile(p) is p`, and
+    // passing flags with it is an error rather than a silent ignore.
+    if let Ok(existing) = pattern.cast::<PyPattern>() {
+        if flags != 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "cannot process flags argument with a compiled pattern",
+            ));
+        }
+        return Ok(existing.clone().unbind());
     }
     if let Ok(text) = pattern.cast::<PyString>() {
-        return PyPattern::with_flags(&text.to_cow()?, flags);
+        let built = PyPattern::with_flags(&text.to_cow()?, flags)?;
+        return Py::new(pattern.py(), built);
     }
     if let Ok(raw) = pattern.cast::<PyBytes>() {
         // Bytes patterns are decoded as latin-1 so byte values survive the
         // parser, then compiled with ASCII class semantics.
         let decoded: String = raw.as_bytes().iter().map(|&byte| byte as char).collect();
-        return PyPattern::build(&decoded, flags, true);
+        let built = PyPattern::build(&decoded, flags, true)?;
+        return Py::new(pattern.py(), built);
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
-        "first argument must be a string or compiled pattern",
-    ))
+    Err(pyo3::exceptions::PyTypeError::new_err(format!(
+        "first argument must be a string or compiled pattern, not '{}'",
+        pattern
+            .get_type()
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_default()
+    )))
 }
 
-fn compile_with(flags: u32, pattern: &Bound<'_, PyAny>) -> PyResult<PyPattern> {
+fn compile_with(flags: u32, pattern: &Bound<'_, PyAny>) -> PyResult<Py<PyPattern>> {
     compile(pattern, flags)
 }
 
@@ -1233,7 +1259,9 @@ macro_rules! module_fn {
             text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<Option<Py<PyMatch>>> {
-            compile_with(flags, pattern)?.$method(py, text, 0, None)
+            compile_with(flags, pattern)?
+                .borrow(py)
+                .$method(py, text, 0, None)
         }
     };
 }
@@ -1248,7 +1276,9 @@ macro_rules! module_iter_fn {
             text: &Bound<'_, PyAny>,
             flags: u32,
         ) -> PyResult<PyFindIter> {
-            compile_with(flags, pattern)?.finditer(py, text, 0, None)
+            compile_with(flags, pattern)?
+                .borrow(py)
+                .finditer(py, text, 0, None)
         }
     };
 }
@@ -1268,7 +1298,9 @@ fn findall(
     text: &Bound<'_, PyAny>,
     flags: u32,
 ) -> PyResult<Py<PyList>> {
-    compile_with(flags, pattern)?.findall(py, text, 0, None)
+    compile_with(flags, pattern)?
+        .borrow(py)
+        .findall(py, text, 0, None)
 }
 
 #[pyfunction]
@@ -1281,7 +1313,9 @@ fn sub(
     count: usize,
     flags: u32,
 ) -> PyResult<Py<PyAny>> {
-    compile_with(flags, pattern)?.sub(py, repl, text, count)
+    compile_with(flags, pattern)?
+        .borrow(py)
+        .sub(py, repl, text, count)
 }
 
 #[pyfunction]
@@ -1294,7 +1328,9 @@ fn subn(
     count: usize,
     flags: u32,
 ) -> PyResult<(Py<PyAny>, usize)> {
-    compile_with(flags, pattern)?.subn(py, repl, text, count)
+    compile_with(flags, pattern)?
+        .borrow(py)
+        .subn(py, repl, text, count)
 }
 
 #[pyfunction]
@@ -1306,7 +1342,9 @@ fn split(
     maxsplit: isize,
     flags: u32,
 ) -> PyResult<Py<PyList>> {
-    compile_with(flags, pattern)?.split(py, text, maxsplit)
+    compile_with(flags, pattern)?
+        .borrow(py)
+        .split(py, text, maxsplit)
 }
 
 /// A `re.Scanner`-style cursor over a subject.
@@ -1810,6 +1848,29 @@ fn shift_slots(slots: &mut [usize], offset: usize) {
         if *value != usize::MAX {
             *value += offset;
         }
+    }
+}
+
+/// Accept bytearray, memoryview, and other buffer objects as byte subjects.
+///
+/// CPython's `re` treats anything supporting the buffer protocol as bytes; this
+/// copies it once, which is what a `Match` would otherwise have to pin.
+fn as_byte_subject<'py>(
+    py: Python<'py>,
+    text: &Bound<'_, PyAny>,
+) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    if text.cast::<PyString>().is_ok() || text.cast::<PyBytes>().is_ok() {
+        return Ok(None);
+    }
+    match text.extract::<Vec<u8>>() {
+        Ok(buffer) => Ok(Some(PyBytes::new(py, &buffer))),
+        Err(_) => Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected string or bytes-like object, got '{}'",
+            text.get_type()
+                .name()
+                .map(|n| n.to_string())
+                .unwrap_or_default()
+        ))),
     }
 }
 
