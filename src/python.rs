@@ -1225,16 +1225,38 @@ fn compile(pattern: &Bound<'_, PyAny>, flags: u32) -> PyResult<Py<PyPattern>> {
         }
         return Ok(existing.clone().unbind());
     }
+    // Cache compiled patterns, as re does: `re.compile(p) is re.compile(p)`.
+    let py = pattern.py();
+    let cache = py.import("unirex")?.getattr("_cache")?;
+    let cache = cache.cast::<PyDict>()?;
+    // Dict lookup compares str/bytes by value, so equal patterns share an
+    // entry and the cache cannot confuse a str pattern with a bytes one.
+    let composite = (pattern, flags);
+    if let Some(hit) = cache.get_item(composite)? {
+        if let Ok(found) = hit.cast::<PyPattern>() {
+            return Ok(found.clone().unbind());
+        }
+    }
     if let Ok(text) = pattern.cast::<PyString>() {
         let built = PyPattern::with_flags(&text.to_cow()?, flags)?;
-        return Py::new(pattern.py(), built);
+        let handle = Py::new(py, built)?;
+        if cache.len() > 512 {
+            cache.clear();
+        }
+        cache.set_item(composite, handle.clone_ref(py))?;
+        return Ok(handle);
     }
     if let Ok(raw) = pattern.cast::<PyBytes>() {
         // Bytes patterns are decoded as latin-1 so byte values survive the
         // parser, then compiled with ASCII class semantics.
         let decoded: String = raw.as_bytes().iter().map(|&byte| byte as char).collect();
         let built = PyPattern::build(&decoded, flags, true)?;
-        return Py::new(pattern.py(), built);
+        let handle = Py::new(py, built)?;
+        if cache.len() > 512 {
+            cache.clear();
+        }
+        cache.set_item(composite, handle.clone_ref(py))?;
+        return Ok(handle);
     }
     Err(pyo3::exceptions::PyTypeError::new_err(format!(
         "first argument must be a string or compiled pattern, not '{}'",
@@ -1487,9 +1509,13 @@ fn escape_str(text: &str) -> String {
     out
 }
 
-/// No-op: this engine keeps no pattern cache.
+/// Clear the compiled-pattern cache, as `re.purge` does.
 #[pyfunction]
-fn purge() {}
+fn purge(py: Python<'_>) -> PyResult<()> {
+    let cache = py.import("unirex")?.getattr("_cache")?;
+    cache.cast::<PyDict>()?.clear();
+    Ok(())
+}
 
 /// A single match with its capture spans.
 #[pyclass(name = "Match", module = "unirex", weakref)]
@@ -1803,6 +1829,7 @@ fn compile_error(py: Python<'_>, pattern: &str, err: &crate::Error) -> PyErr {
 #[pymodule]
 fn unirex(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("_cache", PyDict::new(m.py()))?;
     m.add_class::<PyPattern>()?;
     m.add_class::<PyMatch>()?;
     m.add_class::<PyFindIter>()?;

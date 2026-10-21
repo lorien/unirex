@@ -78,7 +78,6 @@ EXPECTED = {
     "ReTests.test_other_escapes": "unsupported: syntax the parser rejects",
     "ReTests.test_pattern_compare": "todo: match result differs from re",
     "ReTests.test_pattern_compare_bytes": "todo: match result differs from re",
-    "ReTests.test_pickling": "todo: match result differs from re",
     "ReTests.test_possessive_quantifiers": "unsupported: possessive quantifiers are rejected",
     "ReTests.test_possible_set_operations": "unsupported: class set operations are rejected",
     "ReTests.test_qualified_re_split": "todo: warning that re emits is missing",
